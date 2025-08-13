@@ -18,9 +18,25 @@ export default {
 			}
 		},
 		extend: {
+			fontFamily: {
+				sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+			},
 			colors: {
+				// Brand colors
+				brand: {
+					primary: 'hsl(var(--brand-primary))',
+					'primary-alt': 'hsl(var(--brand-primary-alt))',
+					success: 'hsl(var(--brand-success))',
+					danger: 'hsl(var(--brand-danger))',
+					canvas: 'hsl(var(--brand-canvas))',
+					ink: 'hsl(var(--brand-ink))',
+				},
+				// Semantic colors
 				border: 'hsl(var(--border))',
-				input: 'hsl(var(--input))',
+				input: {
+					DEFAULT: 'hsl(var(--input))',
+					border: 'hsl(var(--input-border))',
+				},
 				ring: 'hsl(var(--ring))',
 				background: 'hsl(var(--background))',
 				foreground: 'hsl(var(--foreground))',
@@ -35,6 +51,10 @@ export default {
 				destructive: {
 					DEFAULT: 'hsl(var(--destructive))',
 					foreground: 'hsl(var(--destructive-foreground))'
+				},
+				success: {
+					DEFAULT: 'hsl(var(--success))',
+					foreground: 'hsl(var(--success-foreground))'
 				},
 				muted: {
 					DEFAULT: 'hsl(var(--muted))',
@@ -52,16 +72,24 @@ export default {
 					DEFAULT: 'hsl(var(--card))',
 					foreground: 'hsl(var(--card-foreground))'
 				},
-				sidebar: {
-					DEFAULT: 'hsl(var(--sidebar-background))',
-					foreground: 'hsl(var(--sidebar-foreground))',
-					primary: 'hsl(var(--sidebar-primary))',
-					'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
-					accent: 'hsl(var(--sidebar-accent))',
-					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
-					border: 'hsl(var(--sidebar-border))',
-					ring: 'hsl(var(--sidebar-ring))'
-				}
+				// Domain-specific colors
+				domain: {
+					available: 'hsl(var(--domain-available))',
+					taken: 'hsl(var(--domain-taken))',
+					premium: 'hsl(var(--domain-premium))',
+					transfer: 'hsl(var(--domain-transfer))',
+				},
+			},
+			backgroundImage: {
+				'gradient-primary': 'var(--gradient-primary)',
+				'gradient-success': 'var(--gradient-success)',
+				'gradient-hero': 'var(--gradient-hero)',
+			},
+			boxShadow: {
+				'sm': 'var(--shadow-sm)',
+				'md': 'var(--shadow-md)',
+				'lg': 'var(--shadow-lg)',
+				'primary': 'var(--shadow-primary)',
 			},
 			borderRadius: {
 				lg: 'var(--radius)',
