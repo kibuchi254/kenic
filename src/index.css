@@ -59,6 +59,7 @@
     --gradient-primary: linear-gradient(135deg, hsl(var(--brand-primary)), hsl(var(--brand-primary-alt)));
     --gradient-success: linear-gradient(135deg, hsl(var(--brand-success)), hsl(108 73% 35%));
     --gradient-hero: linear-gradient(135deg, hsl(var(--brand-primary) / 0.95), hsl(var(--brand-primary-alt) / 0.9));
+    --gradient-card: linear-gradient(135deg, hsl(var(--brand-primary) / 0.6), hsl(var(--brand-ink) / 0.8));
     
     /* Shadows */
     --shadow-sm: 0 1px 2px 0 hsl(var(--brand-ink) / 0.05);
@@ -162,6 +163,16 @@
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
+
+  /* Pulse chip for section headers */
+  .pulse-chip {
+    @apply inline-flex items-center gap-2 text-sm font-medium uppercase tracking-wider text-primary;
+  }
+
+  /* Card enter animation */
+  .animate-card-enter {
+    animation: cardEnter 0.5s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+  }
 }
 
 @layer utilities {
@@ -186,19 +197,60 @@
     }
   }
   
+  @keyframes float-gentle {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-8px); }
+  }
+  
+  @keyframes float-gentle-delayed {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-6px); }
+  }
+  
+  @keyframes float-gentle-slow {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-5px); }
+  }
+  
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  
+  @keyframes cardEnter {
+    from {
+      opacity: 0;
+      transform: translateY(200px) scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  
   .animate-shimmer {
     animation: shimmer 2s infinite;
     background: linear-gradient(90deg, transparent, hsl(var(--muted)), transparent);
     background-size: 200px 100%;
   }
-}
-
-@layer base {
-  * {
-    @apply border-border;
+  
+  .animate-float-gentle {
+    animation: float-gentle 8s ease-in-out infinite;
   }
-
-  body {
-    @apply bg-background text-foreground;
+  
+  .animate-float-gentle-delayed {
+    animation: float-gentle-delayed 10s ease-in-out infinite;
+  }
+  
+  .animate-float-gentle-slow {
+    animation: float-gentle-slow 12s ease-in-out infinite;
+  }
+  
+  .animate-fade-in {
+    animation: fade-in 0.5s ease-out forwards;
+  }
+  
+  .perspective-1000 {
+    perspective: 1000px;
   }
 }
