@@ -1,6 +1,7 @@
-// server.js
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
+import fs from 'fs';
+import path from 'path';
 
 async function createServer() {
     const app = express();
@@ -12,14 +13,34 @@ async function createServer() {
 
     app.use(vite.middlewares);
 
-    // Your SSR rendering logic would go here
-    app.use('*', async (req, res, next) => {
+    // Handle all routes (but with proper error handling)
+    app.use(async (req, res, next) => {
         const url = req.originalUrl;
+
         try {
-            // ... (SSR logic to render your React components)
-            // This part of the code is more complex and depends on your framework
+            // 1. Read index.html
+            let template = fs.readFileSync(
+                path.resolve('./index.html'),
+                'utf-8'
+            );
+
+            // 2. Apply Vite HTML transforms
+            template = await vite.transformIndexHtml(url, template);
+
+            // 3. Load the server entry (you'll need to create this)
+            // const { render } = await vite.ssrLoadModule('/src/entry-server.jsx');
+
+            // 4. Render the app HTML
+            // const appHtml = await render(url);
+
+            // 5. Inject the app-rendered HTML into the template
+            // For now, just serve the template as-is (SPA mode)
+            const html = template;
+
+            res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
         } catch (e) {
-            vite.middlewares.handleError(e, req, res);
+            vite.ssrFixStacktrace(e);
+            next(e);
         }
     });
 
@@ -28,4 +49,4 @@ async function createServer() {
     });
 }
 
-createServer();
+createServer().catch(console.error);
