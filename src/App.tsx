@@ -7,7 +7,7 @@ import Index from "./pages/Index";
 import DomainCheckout from "./pages/DomainCheckout";
 import Signin from "./pages/Signin";
 import NotFound from "./pages/NotFound";
-
+import PrivacyPolicy from "./pages/PrivacyPolicy";
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -20,6 +20,10 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/domain-checkout" element={<DomainCheckout />} />
           <Route path="/signin" element={<Signin />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+          {/* Add other routes here */}
+          
+          {/* Catch-all route for 404 Not Found */}
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
