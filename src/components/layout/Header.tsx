@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Globe, User, ShoppingCart, Menu, X, ChevronDown, 
+import {
+  Globe, User, ShoppingCart, Menu, X, ChevronDown,
   Server, Shield, FileText, Users, Award, Settings,
   Download, Link, CreditCard, UserCheck, Calendar,
   Search, Newspaper, Briefcase, ArrowRight
@@ -128,17 +128,14 @@ export function Header({ cartCount = 0 }: HeaderProps) {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     setActiveDropdown(menu);
   };
-
   const handleMouseLeave = () => {
     timeoutRef.current = setTimeout(() => {
       setActiveDropdown(null);
     }, 150);
   };
-
   const toggleMobileDropdown = (menu: string) => {
     setMobileActiveDropdown(mobileActiveDropdown === menu ? null : menu);
   };
-
   const toggleMobileMenu = () => {
     setIsMobileMenuOpen(!isMobileMenuOpen);
     setMobileActiveDropdown(null);
@@ -150,7 +147,6 @@ export function Header({ cartCount = 0 }: HeaderProps) {
     };
   }, []);
 
-  // All dropdowns will be centered on the page
   const getDropdownPosition = () => {
     return 'left-1/2 transform -translate-x-1/2';
   };
@@ -253,7 +249,6 @@ export function Header({ cartCount = 0 }: HeaderProps) {
               <p className="text-xs text-gray-600">Get Your .KE Today!</p>
             </div>
           </div>
-
           {/* Desktop Navigation */}
           <nav className="hidden lg:flex items-center space-x-8" ref={navRef}>
             {navItems.map((item) => (
@@ -272,7 +267,6 @@ export function Header({ cartCount = 0 }: HeaderProps) {
                     <ChevronDown className="h-4 w-4 transition-transform duration-200" />
                   )}
                 </a>
-
                 {/* Mega Menu Dropdown */}
                 {!item.direct && activeDropdown === item.key && megaMenuData[item.key as keyof typeof megaMenuData] && (
                   <div className="fixed left-1/2 transform -translate-x-1/2 top-16 w-screen max-w-4xl bg-white border rounded-lg shadow-lg z-50">
@@ -285,7 +279,6 @@ export function Header({ cartCount = 0 }: HeaderProps) {
               </div>
             ))}
           </nav>
-
           {/* Actions */}
           <div className="flex items-center space-x-2 sm:space-x-3">
             {/* Cart */}
@@ -305,7 +298,6 @@ export function Header({ cartCount = 0 }: HeaderProps) {
                 </Badge>
               )}
             </Button>
-
             {/* User Account */}
             <Button
               variant="ghost"
@@ -315,16 +307,17 @@ export function Header({ cartCount = 0 }: HeaderProps) {
             >
               <User className="h-5 w-5" />
             </Button>
-
             {/* Sign In */}
             <Button
               variant="outline"
               size="sm"
               className="hidden sm:inline-flex text-sm font-medium px-4 hover:bg-red-600 hover:text-white hover:border-red-600"
+              asChild
             >
-              Sign In
+              <a href="/signin">
+                Sign In
+              </a>
             </Button>
-
             {/* Mobile Menu Toggle */}
             <Button
               variant="ghost"
@@ -337,11 +330,10 @@ export function Header({ cartCount = 0 }: HeaderProps) {
             </Button>
           </div>
         </div>
-
         {/* Mobile Menu */}
         <div className={`lg:hidden transition-all duration-300 ease-in-out ${
-          isMobileMenuOpen 
-            ? 'max-h-screen opacity-100 visible' 
+          isMobileMenuOpen
+            ? 'max-h-screen opacity-100 visible'
             : 'max-h-0 opacity-0 invisible overflow-hidden'
         }`}>
           <nav className="py-4 space-y-2 bg-white/95 backdrop-blur-md border-t max-h-[calc(100vh-4rem)] overflow-y-auto">
@@ -366,11 +358,10 @@ export function Header({ cartCount = 0 }: HeaderProps) {
                     }`} />
                   </button>
                 )}
-
                 {/* Mobile Dropdown Content */}
                 {!item.direct && mobileActiveDropdown === item.key && megaMenuData[item.key as keyof typeof megaMenuData] && (
                   <div className="pl-4 space-y-2 border-l-2 border-red-200 ml-3 max-h-80 overflow-y-auto">
-                    {megaMenuData[item.key as keyof typeof megaMenuData].type === 'grid' 
+                    {megaMenuData[item.key as keyof typeof megaMenuData].type === 'grid'
                       ? megaMenuData[item.key as keyof typeof megaMenuData].columns.map((column: any, colIndex: number) => (
                           <div key={colIndex} className="space-y-2">
                             <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider px-3 py-2">
@@ -424,15 +415,17 @@ export function Header({ cartCount = 0 }: HeaderProps) {
                 )}
               </div>
             ))}
-            
+
             <div className="pt-4 border-t border-gray-200">
               <Button
                 variant="outline"
                 size="sm"
                 className="w-full text-sm font-medium hover:bg-red-600 hover:text-white hover:border-red-600"
-                onClick={() => setIsMobileMenuOpen(false)}
+                asChild
               >
-                Sign In
+                <a href="/signin" onClick={() => setIsMobileMenuOpen(false)}>
+                  Sign In
+                </a>
               </Button>
             </div>
           </nav>
