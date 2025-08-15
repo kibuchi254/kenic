@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Eye, EyeOff, ArrowLeft, User, 
   Check, AlertCircle, Loader2, Shield
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 // React Icons for Email and Password
 const MailIcon = ({ className }) => (
@@ -18,8 +19,27 @@ const LockIcon = ({ className }) => (
   </svg>
 );
 
+// Google Logo SVG Component
+const GoogleLogo = ({ className = "w-5 h-5" }) => (
+  <svg className={className} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+  </svg>
+);
+
+// KENIC Logo Component
+const KenicLogo = ({ className = "w-12 h-12" }) => (
+  <div className={`bg-red-600 rounded-lg flex items-center justify-center ${className}`}>
+    <span className="text-white font-bold text-lg">.KE</span>
+  </div>
+);
+
+const BASE_URL = 'https://api.digikenya.co.ke';
+
 const AuthPages = () => {
-  const [currentPage, setCurrentPage] = useState('signin'); // 'signin' or 'signup'
+  const [currentPage, setCurrentPage] = useState('signin');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -31,13 +51,38 @@ const AuthPages = () => {
     acceptTerms: false
   });
   const [errors, setErrors] = useState({});
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.onload = () => {
+      window.google.accounts.id.initialize({
+        client_id: 'YOUR_GOOGLE_WEB_CLIENT_ID',
+        callback: handleGoogleAuthResponse
+      });
+      window.google.accounts.id.renderButton(
+        document.getElementById('google-signin-button-signin'),
+        { theme: 'outline', size: 'large', width: 400 }
+      );
+      window.google.accounts.id.renderButton(
+        document.getElementById('google-signin-button-signup'),
+        { theme: 'outline', size: 'large', width: 400 }
+      );
+    };
+    document.body.appendChild(script);
+
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
     }));
-    // Clear error when user starts typing
     if (errors[field]) {
       setErrors(prev => ({
         ...prev,
@@ -57,13 +102,15 @@ const AuthPages = () => {
     
     if (!formData.password) {
       newErrors.password = 'Password is required';
-    } else if (formData.password.length < 8) {
-      newErrors.password = 'Password must be at least 8 characters';
+    } else if (formData.password.length < 6) {
+      newErrors.password = 'Password must be at least 6 characters';
     }
     
     if (currentPage === 'signup') {
       if (!formData.fullName) {
         newErrors.fullName = 'Full name is required';
+      } else if (formData.fullName.length < 2) {
+        newErrors.fullName = 'Full name must be at least 2 characters';
       }
       
       if (formData.password !== formData.confirmPassword) {
@@ -85,39 +132,79 @@ const AuthPages = () => {
     if (!validateForm()) return;
     
     setIsLoading(true);
-    
-    // Simulate API call
-    setTimeout(() => {
+    setErrors({});
+
+    try {
+      const endpoint = currentPage === 'signin' 
+        ? `${BASE_URL}/customer/auth/login`
+        : `${BASE_URL}/customer/auth/register`;
+      
+      const body = currentPage === 'signin' 
+        ? { email: formData.email, password: formData.password }
+        : { name: formData.fullName, email: formData.email, password: formData.password };
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || `${currentPage === 'signin' ? 'Sign-in' : 'Sign-up'} failed`);
+      }
+
+      if (currentPage === 'signin') {
+        localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('user', JSON.stringify({
+          email: formData.email
+        }));
+      } else {
+        localStorage.setItem('access_token', data.id);
+        localStorage.setItem('user', JSON.stringify({
+          id: data.id,
+          name: data.name,
+          email: data.email,
+          created_at: data.created_at
+        }));
+      }
+
+      navigate('/dashboard');
+    } catch (error) {
+      setErrors({ api: error.message });
+    } finally {
       setIsLoading(false);
-      console.log(`${currentPage} form submitted:`, formData);
-    }, 2000);
+    }
   };
 
-  const handleGoogleAuth = () => {
+  const handleGoogleAuthResponse = async (response) => {
     setIsLoading(true);
-    // Simulate Google OAuth
-    setTimeout(() => {
+    setErrors({});
+
+    try {
+      const res = await fetch(`${BASE_URL}/customer/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential: response.credential })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.detail || 'Google authentication failed');
+      }
+
+      localStorage.setItem('access_token', data.access_token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+
+      navigate('/dashboard');
+    } catch (error) {
+      setErrors({ api: error.message });
+    } finally {
       setIsLoading(false);
-      console.log('Google auth initiated');
-    }, 1500);
+    }
   };
-
-  // Google Logo SVG Component
-  const GoogleLogo = ({ className = "w-5 h-5" }) => (
-    <svg className={className} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-    </svg>
-  );
-
-  // KENIC Logo Component
-  const KenicLogo = ({ className = "w-12 h-12" }) => (
-    <div className={`bg-red-600 rounded-lg flex items-center justify-center ${className}`}>
-      <span className="text-white font-bold text-lg">.KE</span>
-    </div>
-  );
 
   const InputField = ({ 
     type, 
@@ -169,10 +256,8 @@ const AuthPages = () => {
 
   const SignInPage = () => (
     <div className="min-h-screen flex flex-col lg:flex-row">
-      {/* Left Side - Form */}
       <div className="flex-1 flex items-center justify-center p-4 sm:p-8 bg-gradient-to-br from-gray-50 to-white order-2 lg:order-1">
         <div className="w-full max-w-md space-y-6 sm:space-y-8">
-          {/* Header */}
           <div className="text-center space-y-2">
             <div className="flex items-center justify-center space-x-3 mb-4 sm:mb-6">
               <KenicLogo />
@@ -185,24 +270,15 @@ const AuthPages = () => {
             <p className="text-gray-600 text-sm sm:text-base">Sign in to your account to continue</p>
           </div>
 
-          {/* Google Sign In Button */}
-          <button
-            type="button"
-            onClick={handleGoogleAuth}
-            disabled={isLoading}
-            className="w-full h-11 sm:h-12 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 shadow-sm hover:shadow-md group rounded-xl flex items-center justify-center space-x-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isLoading ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              <>
-                <GoogleLogo />
-                <span>Continue with Google</span>
-              </>
-            )}
-          </button>
+          {errors.api && (
+            <div className="flex items-center space-x-1 text-red-600 text-sm animate-in slide-in-from-top-1 duration-200">
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+              <span>{errors.api}</span>
+            </div>
+          )}
 
-          {/* Divider */}
+          <div id="google-signin-button-signin" className="w-full"></div>
+
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-gray-200" />
@@ -212,8 +288,7 @@ const AuthPages = () => {
             </div>
           </div>
 
-          {/* Form */}
-          <div className="space-y-4 sm:space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
             <InputField
               type="email"
               placeholder="Enter your email"
@@ -235,7 +310,6 @@ const AuthPages = () => {
               onPasswordToggle={() => setShowPassword(!showPassword)}
             />
 
-            {/* Forgot Password */}
             <div className="text-right">
               <a
                 href="#"
@@ -245,10 +319,8 @@ const AuthPages = () => {
               </a>
             </div>
 
-            {/* Sign In Button */}
             <button
               type="submit"
-              onClick={handleSubmit}
               disabled={isLoading}
               className="w-full h-11 sm:h-12 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-medium rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center"
             >
@@ -258,9 +330,8 @@ const AuthPages = () => {
                 'Sign In'
               )}
             </button>
-          </div>
+          </form>
 
-          {/* Sign Up Link */}
           <div className="text-center">
             <p className="text-gray-600 text-sm sm:text-base">
               Don't have an account?{' '}
@@ -276,7 +347,6 @@ const AuthPages = () => {
         </div>
       </div>
 
-      {/* Right Side - Visual */}
       <div className="hidden lg:flex flex-1 bg-gradient-to-br from-red-600 via-red-700 to-red-800 relative overflow-hidden order-1 lg:order-2">
         <div className="absolute inset-0 bg-black/10" />
         <div className="relative z-10 flex items-center justify-center p-8 xl:p-12 text-white">
@@ -304,7 +374,6 @@ const AuthPages = () => {
             </div>
           </div>
         </div>
-        {/* Decorative elements */}
         <div className="absolute top-1/4 right-1/4 w-24 h-24 xl:w-32 xl:h-32 bg-white/10 rounded-full blur-xl" />
         <div className="absolute bottom-1/4 left-1/4 w-16 h-16 xl:w-24 xl:h-24 bg-white/10 rounded-full blur-xl" />
       </div>
@@ -313,7 +382,6 @@ const AuthPages = () => {
 
   const SignUpPage = () => (
     <div className="min-h-screen flex flex-col lg:flex-row">
-      {/* Left Side - Visual */}
       <div className="hidden lg:flex flex-1 bg-gradient-to-br from-red-600 via-red-700 to-red-800 relative overflow-hidden">
         <div className="absolute inset-0 bg-black/10" />
         <div className="relative z-10 flex items-center justify-center p-8 xl:p-12 text-white">
@@ -341,15 +409,12 @@ const AuthPages = () => {
             </div>
           </div>
         </div>
-        {/* Decorative elements */}
         <div className="absolute top-1/4 left-1/4 w-24 h-24 xl:w-32 xl:h-32 bg-white/10 rounded-full blur-xl" />
         <div className="absolute bottom-1/4 right-1/4 w-16 h-16 xl:w-24 xl:h-24 bg-white/10 rounded-full blur-xl" />
       </div>
 
-      {/* Right Side - Form */}
       <div className="flex-1 flex items-center justify-center p-4 sm:p-8 bg-gradient-to-br from-gray-50 to-white">
         <div className="w-full max-w-md space-y-6 sm:space-y-8">
-          {/* Header */}
           <div className="text-center space-y-2">
             <button
               onClick={() => setCurrentPage('signin')}
@@ -369,24 +434,15 @@ const AuthPages = () => {
             <p className="text-gray-600 text-sm sm:text-base">Join thousands of .KE domain owners</p>
           </div>
 
-          {/* Google Sign Up Button */}
-          <button
-            type="button"
-            onClick={handleGoogleAuth}
-            disabled={isLoading}
-            className="w-full h-11 sm:h-12 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 shadow-sm hover:shadow-md rounded-xl flex items-center justify-center space-x-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isLoading ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              <>
-                <GoogleLogo />
-                <span>Continue with Google</span>
-              </>
-            )}
-          </button>
+          {errors.api && (
+            <div className="flex items-center space-x-1 text-red-600 text-sm animate-in slide-in-from-top-1 duration-200">
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+              <span>{errors.api}</span>
+            </div>
+          )}
 
-          {/* Divider */}
+          <div id="google-signin-button-signup" className="w-full"></div>
+
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-gray-200" />
@@ -396,8 +452,7 @@ const AuthPages = () => {
             </div>
           </div>
 
-          {/* Form */}
-          <div className="space-y-4 sm:space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
             <InputField
               type="text"
               placeholder="Enter your full name"
@@ -440,7 +495,6 @@ const AuthPages = () => {
               onPasswordToggle={() => setShowConfirmPassword(!showConfirmPassword)}
             />
 
-            {/* Terms and Conditions */}
             <div className="space-y-2">
               <label className="flex items-start space-x-3 cursor-pointer">
                 <div className="relative flex-shrink-0 mt-0.5">
@@ -479,10 +533,8 @@ const AuthPages = () => {
               )}
             </div>
 
-            {/* Create Account Button */}
             <button
               type="submit"
-              onClick={handleSubmit}
               disabled={isLoading}
               className="w-full h-11 sm:h-12 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-medium rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center"
             >
@@ -492,9 +544,8 @@ const AuthPages = () => {
                 'Create Account'
               )}
             </button>
-          </div>
+          </form>
 
-          {/* Sign In Link */}
           <div className="text-center">
             <p className="text-gray-600 text-sm sm:text-base">
               Already have an account?{' '}
