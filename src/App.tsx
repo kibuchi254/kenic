@@ -8,6 +8,7 @@ import DomainCheckout from "./pages/DomainCheckout";
 import Signin from "./pages/Signin";
 import NotFound from "./pages/NotFound";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
+import Signup from "./pages/Signup";
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -21,6 +22,7 @@ const App = () => (
           <Route path="/domain-checkout" element={<DomainCheckout />} />
           <Route path="/signin" element={<Signin />} />
           <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+          <Route path="/signup" element={<Signup />} />
           {/* Add other routes here */}
           
           {/* Catch-all route for 404 Not Found */}

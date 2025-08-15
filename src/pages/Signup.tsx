@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Eye, EyeOff, AlertCircle, Loader2, Shield, Check } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Eye, EyeOff, ArrowLeft, User, Check, AlertCircle, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 // React Icons for Email and Password
@@ -63,16 +63,23 @@ const InputField = React.memo(({ id, type, placeholder, value, onChange, icon: I
   );
 });
 
-const Signin = () => {
-  const [formData, setFormData] = useState({ email: '', password: '' });
+const Signup = () => {
+  const [formData, setFormData] = useState({
+    fullName: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    acceptTerms: false,
+  });
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const navigate = useNavigate();
 
   // Handle input change without debounce for better responsiveness
   const handleInputChange = (field) => (e) => {
-    const value = e.target.value;
+    const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
     setFormData((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) {
       setErrors((prev) => ({ ...prev, [field]: '' }));
@@ -89,9 +96,9 @@ const Signin = () => {
         client_id: 'YOUR_GOOGLE_WEB_CLIENT_ID',
         callback: handleGoogleAuthResponse,
       });
-      const signinButton = document.getElementById('google-signin-button');
-      if (signinButton) {
-        window.google.accounts.id.renderButton(signinButton, { theme: 'outline', size: 'large', width: 400 });
+      const signupButton = document.getElementById('google-signup-button');
+      if (signupButton) {
+        window.google.accounts.id.renderButton(signupButton, { theme: 'outline', size: 'large', width: 400 });
       }
     };
     document.body.appendChild(script);
@@ -102,6 +109,11 @@ const Signin = () => {
 
   const validateForm = () => {
     const newErrors = {};
+    if (!formData.fullName) {
+      newErrors.fullName = 'Full name is required';
+    } else if (formData.fullName.length < 2) {
+      newErrors.fullName = 'Full name must be at least 2 characters';
+    }
     if (!formData.email) {
       newErrors.email = 'Email is required';
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
@@ -111,6 +123,12 @@ const Signin = () => {
       newErrors.password = 'Password is required';
     } else if (formData.password.length < 6) {
       newErrors.password = 'Password must be at least 6 characters';
+    }
+    if (formData.password !== formData.confirmPassword) {
+      newErrors.confirmPassword = 'Passwords do not match';
+    }
+    if (!formData.acceptTerms) {
+      newErrors.acceptTerms = 'Please accept the terms and conditions';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -122,17 +140,22 @@ const Signin = () => {
     setIsLoading(true);
     setErrors({});
     try {
-      const response = await fetch(`${BASE_URL}/customer/auth/login`, {
+      const response = await fetch(`${BASE_URL}/customer/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: formData.email, password: formData.password }),
+        body: JSON.stringify({ name: formData.fullName, email: formData.email, password: formData.password }),
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.detail || 'Sign-in failed');
+        throw new Error(data.detail || 'Sign-up failed');
       }
-      localStorage.setItem('access_token', data.access_token);
-      localStorage.setItem('user', JSON.stringify({ email: formData.email }));
+      localStorage.setItem('access_token', data.id);
+      localStorage.setItem('user', JSON.stringify({
+        id: data.id,
+        name: data.name,
+        email: data.email,
+        created_at: data.created_at,
+      }));
       navigate('/dashboard');
     } catch (error) {
       setErrors({ api: error.message });
@@ -166,9 +189,43 @@ const Signin = () => {
 
   return (
     <div className="font-sans min-h-screen flex flex-col lg:flex-row">
+      <div className="hidden lg:flex flex-1 bg-gradient-to-br from-red-600 to-red-800 relative overflow-hidden">
+        <div className="relative z-10 flex items-center justify-center p-8 text-white">
+          <div className="text-center space-y-6 max-w-md">
+            <div className="w-16 h-16 mx-auto bg-white/20 rounded-full flex items-center justify-center">
+              <User className="h-8 w-8" />
+            </div>
+            <h3 className="text-2xl font-bold">Join .KE Community</h3>
+            <p className="text-red-100 text-base">
+              Create your account and start managing your .KE domains with professional tools and expert support.
+            </p>
+            <div className="grid grid-cols-1 gap-4 text-left">
+              <div className="flex items-center space-x-3">
+                <Check className="h-5 w-5 text-green-400 flex-shrink-0" />
+                <span className="text-sm">Free domain management tools</span>
+              </div>
+              <div className="flex items-center space-x-3">
+                <Check className="h-5 w-5 text-green-400 flex-shrink-0" />
+                <span className="text-sm">Expert technical support</span>
+              </div>
+              <div className="flex items-center space-x-3">
+                <Check className="h-5 w-5 text-green-400 flex-shrink-0" />
+                <span className="text-sm">Priority customer service</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
       <div className="flex-1 flex items-center justify-center p-4 sm:p-8 bg-gradient-to-br from-gray-50 to-white">
         <div className="w-full max-w-md space-y-6">
           <div className="text-center space-y-2">
+            <button
+              onClick={() => navigate('/signin')}
+              className="inline-flex items-center space-x-2 text-gray-600 hover:text-gray-900 mb-4 text-sm"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>Back to sign in</span>
+            </button>
             <div className="flex items-center justify-center space-x-3 mb-4">
               <KenicLogo />
               <div>
@@ -176,8 +233,8 @@ const Signin = () => {
                 <p className="text-xs text-gray-600">Get Your .KE Today!</p>
               </div>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900">Welcome back</h2>
-            <p className="text-gray-600 text-sm">Sign in to your account to continue</p>
+            <h2 className="text-2xl font-bold text-gray-900">Create account</h2>
+            <p className="text-gray-600 text-sm">Join thousands of .KE domain owners</p>
           </div>
           {errors.api && (
             <div className="flex items-center space-x-1 text-red-600 text-sm">
@@ -185,18 +242,27 @@ const Signin = () => {
               <span>{errors.api}</span>
             </div>
           )}
-          <div id="google-signin-button" className="w-full"></div>
+          <div id="google-signup-button" className="w-full"></div>
           <div className="relative my-4">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-gray-200" />
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-4 bg-gray-50 text-gray-500">or continue with email</span>
+              <span className="px-4 bg-gray-50 text-gray-500">or create with email</span>
             </div>
           </div>
           <form onSubmit={handleSubmit} className="space-y-4">
             <InputField
-              id="signin-email"
+              id="signup-fullName"
+              type="text"
+              placeholder="Enter your full name"
+              value={formData.fullName}
+              onChange={handleInputChange('fullName')}
+              icon={User}
+              error={errors.fullName}
+            />
+            <InputField
+              id="signup-email"
               type="email"
               placeholder="Enter your email"
               value={formData.email}
@@ -205,9 +271,9 @@ const Signin = () => {
               error={errors.email}
             />
             <InputField
-              id="signin-password"
+              id="signup-password"
               type="password"
-              placeholder="Enter your password"
+              placeholder="Create a password"
               value={formData.password}
               onChange={handleInputChange('password')}
               icon={LockIcon}
@@ -216,57 +282,71 @@ const Signin = () => {
               showPassword={showPassword}
               onPasswordToggle={() => setShowPassword(!showPassword)}
             />
-            <div className="text-right">
-              <a href="#" className="text-sm text-red-600 hover:text-red-700 font-medium">
-                Forgot your password?
-              </a>
+            <InputField
+              id="signup-confirmPassword"
+              type="password"
+              placeholder="Confirm your password"
+              value={formData.confirmPassword}
+              onChange={handleInputChange('confirmPassword')}
+              icon={LockIcon}
+              error={errors.confirmPassword}
+              showPasswordToggle
+              showPassword={showConfirmPassword}
+              onPasswordToggle={() => setShowConfirmPassword(!showConfirmPassword)}
+            />
+            <div className="space-y-2">
+              <label className="flex items-start space-x-3 cursor-pointer">
+                <div className="relative flex-shrink-0 mt-0.5">
+                  <input
+                    id="signup-acceptTerms"
+                    type="checkbox"
+                    checked={formData.acceptTerms}
+                    onChange={handleInputChange('acceptTerms')}
+                    className="sr-only"
+                  />
+                  <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                    formData.acceptTerms ? 'bg-red-600 border-red-600' : 'border-gray-300 hover:border-gray-400'
+                  }`}>
+                    {formData.acceptTerms && <Check className="h-3 w-3 text-white" />}
+                  </div>
+                </div>
+                <span className="text-sm text-gray-600">
+                  I agree to the{' '}
+                  <a href="#" className="text-red-600 hover:text-red-700 font-medium">
+                    Terms of Service
+                  </a>{' '}
+                  and{' '}
+                  <a href="#" className="text-red-600 hover:text-red-700 font-medium">
+                    Privacy Policy
+                  </a>
+                </span>
+              </label>
+              {errors.acceptTerms && (
+                <div className="flex items-center space-x-1 text-red-600 text-sm">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  <span>{errors.acceptTerms}</span>
+                </div>
+              )}
             </div>
             <button
               type="submit"
               disabled={isLoading}
               className="w-full h-11 bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
             >
-              {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Sign In'}
+              {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Create Account'}
             </button>
           </form>
           <div className="text-center">
             <p className="text-gray-600 text-sm">
-              Don't have an account?{' '}
+              Already have an account?{' '}
               <button
                 type="button"
-                onClick={() => navigate('/signup')}
+                onClick={() => navigate('/signin')}
                 className="text-red-600 hover:text-red-700 font-medium"
               >
-                Sign up
+                Sign in
               </button>
             </p>
-          </div>
-        </div>
-      </div>
-      <div className="hidden lg:flex flex-1 bg-gradient-to-br from-red-600 to-red-800 relative overflow-hidden">
-        <div className="relative z-10 flex items-center justify-center p-8 text-white">
-          <div className="text-center space-y-6 max-w-md">
-            <div className="w-16 h-16 mx-auto bg-white/20 rounded-full flex items-center justify-center">
-              <Shield className="h-8 w-8" />
-            </div>
-            <h3 className="text-2xl font-bold">Secure & Fast</h3>
-            <p className="text-red-100 text-base">
-              Access your .KE domain management with enterprise-grade security and fast performance.
-            </p>
-            <div className="grid grid-cols-1 gap-4 text-left">
-              <div className="flex items-center space-x-3">
-                <Check className="h-5 w-5 text-green-400 flex-shrink-0" />
-                <span className="text-sm">Two-factor authentication</span>
-              </div>
-              <div className="flex items-center space-x-3">
-                <Check className="h-5 w-5 text-green-400 flex-shrink-0" />
-                <span className="text-sm">SSL encrypted connections</span>
-              </div>
-              <div className="flex items-center space-x-3">
-                <Check className="h-5 w-5 text-green-400 flex-shrink-0" />
-                <span className="text-sm">24/7 account monitoring</span>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -274,4 +354,4 @@ const Signin = () => {
   );
 };
 
-export default Signin;
+export default Signup;
