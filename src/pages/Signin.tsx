@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Eye, EyeOff, ArrowLeft, User, 
   Check, AlertCircle, Loader2, Shield
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { debounce } from 'lodash'; // Import lodash debounce for input optimization
 
 // React Icons for Email and Password
 const MailIcon = ({ className }) => (
@@ -53,6 +54,27 @@ const AuthPages = () => {
   const [errors, setErrors] = useState({});
   const navigate = useNavigate();
 
+  // Debounced input change handler to reduce state updates during rapid typing
+  const debouncedHandleInputChange = useCallback(
+    debounce((field, value) => {
+      setFormData(prev => ({
+        ...prev,
+        [field]: value
+      }));
+      if (errors[field]) {
+        setErrors(prev => ({
+          ...prev,
+          [field]: ''
+        }));
+      }
+    }, 300), // 300ms debounce delay
+    [errors]
+  );
+
+  const handleInputChange = (field, value) => {
+    debouncedHandleInputChange(field, value);
+  };
+
   useEffect(() => {
     const script = document.createElement('script');
     script.src = 'https://accounts.google.com/gsi/client';
@@ -78,20 +100,7 @@ const AuthPages = () => {
     };
   }, []);
 
-  const handleInputChange = (field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-    if (errors[field]) {
-      setErrors(prev => ({
-        ...prev,
-        [field]: ''
-      }));
-    }
-  };
-
-  const validateForm = () => {
+  const validateForm = useCallback(() => {
     const newErrors = {};
     
     if (!formData.email) {
@@ -124,7 +133,7 @@ const AuthPages = () => {
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  };
+  }, [formData, currentPage]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
