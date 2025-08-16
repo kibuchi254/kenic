@@ -93,7 +93,7 @@ const Signup = () => {
     script.async = true;
     script.onload = () => {
       window.google?.accounts.id.initialize({
-        client_id: 'YOUR_GOOGLE_WEB_CLIENT_ID',
+        client_id: '1086172926615-vtjrru158m0vgnt5s0aq8mdbjj49drub.apps.googleusercontent.com',
         callback: handleGoogleAuthResponse,
       });
       const signupButton = document.getElementById('google-signup-button');
