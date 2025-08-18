@@ -25,17 +25,6 @@ const KenicLogo = ({ className = "w-12 h-12" }) => (
 
 const BASE_URL = 'https://api.digikenya.co.ke';
 
-function setCookie(name: string, value: string, days = 7) {
-  const date = new Date();
-  date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
-  const expires = `expires=${date.toUTCString()}`;
-  const cookieString = `${name}=${value}; ${expires}; domain=.digikenya.co.ke; path=/; secure; samesite=lax`;
-  console.log('Signin setCookie:', cookieString);
-  document.cookie = cookieString;
-  // Fallback: Store in sessionStorage for immediate access
-  sessionStorage.setItem(name, value);
-}
-
 const InputField = React.memo(({ id, type, placeholder, value, onChange, icon: Icon, error, showPasswordToggle, showPassword, onPasswordToggle }) => {
   return (
     <div className="space-y-2">
@@ -128,11 +117,6 @@ const Signin = () => {
   const [verificationAttempts, setVerificationAttempts] = useState(0);
   const navigate = useNavigate();
 
-  // Define handleInputChange function
-  const handleInputChange = (field) => (e) => {
-    setFormData({ ...formData, [field]: e.target.value });
-  };
-
   useEffect(() => {
     if (resendCooldown > 0) {
       const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
@@ -164,6 +148,10 @@ const Signin = () => {
     }
   }, [currentStep]);
 
+  const handleInputChange = (field) => (e) => {
+    setFormData({ ...formData, [field]: e.target.value });
+  };
+
   const validateForm = () => {
     const newErrors = {};
     if (!formData.email) {
@@ -185,7 +173,7 @@ const Signin = () => {
     if (!validateForm()) return;
     setIsLoading(true);
     setErrors({});
-
+    
     try {
       const response = await fetch(`${BASE_URL}/customer/auth/login`, {
         method: 'POST',
@@ -193,32 +181,28 @@ const Signin = () => {
         credentials: 'include',
         body: JSON.stringify({ email: formData.email, password: formData.password }),
       });
-
+      
       const data = await response.json();
       console.log('Signin: Login response:', data);
-
+      
       if (!response.ok) {
         if (response.status === 403 && data.detail?.includes('verify your email')) {
           await handleResendVerification();
           setCurrentStep('verify');
-          setErrors({
-            info: 'Please verify your email address. We\'ve sent a verification code to your email.'
+          setErrors({ 
+            info: 'Please verify your email address. We\'ve sent a verification code to your email.' 
           });
           return;
         }
         throw new Error(data.detail || 'Sign-in failed');
       }
-
-      setCookie('access_token', data.access_token);
-      setCookie('user', JSON.stringify({ email: formData.email }));
-      if (data.refresh_token) {
-        setCookie('refresh_token', data.refresh_token, 30);
-      }
-
+      
+      // Backend sets cookies; store user in sessionStorage for UI
+      sessionStorage.setItem('user', JSON.stringify({ email: formData.email }));
       setTimeout(() => {
         window.location.href = 'https://console.digikenya.co.ke/';
       }, 100);
-
+      
     } catch (error) {
       console.error('Signin: Login error:', error);
       setErrors({ api: error.message });
@@ -230,15 +214,15 @@ const Signin = () => {
   const handleVerifyOTP = async (e) => {
     e.preventDefault();
     const otpString = otp.join('');
-
+    
     if (otpString.length !== 6) {
       setErrors({ otp: 'Please enter the complete 6-digit OTP' });
       return;
     }
-
+    
     setIsLoading(true);
     setErrors({});
-
+    
     try {
       const response = await fetch(`${BASE_URL}/customer/auth/verify-email`, {
         method: 'POST',
@@ -246,42 +230,21 @@ const Signin = () => {
         credentials: 'include',
         body: JSON.stringify({ email: formData.email, otp: otpString }),
       });
-
+      
       const data = await response.json();
       console.log('Signin: OTP verify response:', data);
-
+      
       if (!response.ok) {
         setVerificationAttempts(prev => prev + 1);
         throw new Error(data.detail || 'Invalid OTP');
       }
-
-      const loginResponse = await fetch(`${BASE_URL}/customer/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email: formData.email, password: formData.password }),
-      });
-
-      const loginData = await loginResponse.json();
-      console.log('Signin: Post-OTP login response:', loginData);
-
-      if (loginResponse.ok) {
-        setCookie('access_token', loginData.access_token);
-        setCookie('user', JSON.stringify({ email: formData.email, is_email_verified: true }));
-        if (loginData.refresh_token) {
-          setCookie('refresh_token', loginData.refresh_token, 30);
-        }
-        setTimeout(() => {
-          window.location.href = 'https://console.digikenya.co.ke/';
-        }, 100);
-      } else {
-        setErrors({ success: 'Email verified successfully! Please try signing in again.' });
-        setTimeout(() => {
-          setCurrentStep('signin');
-          setErrors({});
-        }, 2000);
-      }
-
+      
+      // Backend sets cookies; store user in sessionStorage for UI
+      sessionStorage.setItem('user', JSON.stringify({ email: formData.email, is_email_verified: true }));
+      setTimeout(() => {
+        window.location.href = 'https://console.digikenya.co.ke/';
+      }, 100);
+      
     } catch (error) {
       console.error('Signin: OTP verify error:', error);
       setErrors({ otp: error.message });
@@ -314,18 +277,18 @@ const Signin = () => {
 
   const handleResendOTP = async () => {
     if (resendCooldown > 0) return;
-
+    
     setIsLoading(true);
     setErrors({});
-
+    
     const success = await handleResendVerification();
-
+    
     if (success) {
       setErrors({ success: 'New verification code sent to your email!' });
     } else {
       setErrors({ api: 'Failed to resend verification code. Please try again.' });
     }
-
+    
     setIsLoading(false);
   };
 
@@ -344,11 +307,8 @@ const Signin = () => {
       if (!res.ok) {
         throw new Error(data.detail || 'Google authentication failed');
       }
-      setCookie('access_token', data.access_token);
-      setCookie('user', JSON.stringify(data.user));
-      if (data.refresh_token) {
-        setCookie('refresh_token', data.refresh_token, 30);
-      }
+      // Backend sets cookies; store user in sessionStorage for UI
+      sessionStorage.setItem('user', JSON.stringify(data.user));
       setTimeout(() => {
         window.location.href = 'https://console.digikenya.co.ke/';
       }, 100);
@@ -376,7 +336,7 @@ const Signin = () => {
               <h2 className="text-2xl font-bold text-gray-900">Welcome back</h2>
               <p className="text-gray-600 text-sm">Sign in to your account to continue</p>
             </div>
-
+            
             {errors.api && (
               <div className="flex items-center space-x-1 text-red-600 text-sm bg-red-50 p-3 rounded-lg">
                 <AlertCircle className="h-4 w-4 flex-shrink-0" />
@@ -392,7 +352,7 @@ const Signin = () => {
             )}
 
             <div id="google-signin-button" className="w-full"></div>
-
+            
             <div className="relative my-4">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-gray-200" />
@@ -401,7 +361,7 @@ const Signin = () => {
                 <span className="px-4 bg-gray-50 text-gray-500">or continue with email</span>
               </div>
             </div>
-
+            
             <form onSubmit={handleSubmit} className="space-y-4">
               <InputField
                 id="signin-email"
@@ -437,7 +397,7 @@ const Signin = () => {
                 {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Sign In'}
               </button>
             </form>
-
+            
             <div className="text-center">
               <p className="text-gray-600 text-sm">
                 Don't have an account?{' '}
@@ -452,7 +412,7 @@ const Signin = () => {
             </div>
           </div>
         </div>
-
+        
         <div className="hidden lg:flex flex-1 bg-gradient-to-br from-red-600 to-red-800 relative overflow-hidden">
           <div className="relative z-10 flex items-center justify-center p-8 text-white">
             <div className="text-center space-y-6 max-w-md">
@@ -502,7 +462,7 @@ const Signin = () => {
               </svg>
               <span>Back to sign in</span>
             </button>
-
+            
             <div className="flex items-center justify-center space-x-3 mb-4">
               <KenicLogo />
               <div>
@@ -566,7 +526,7 @@ const Signin = () => {
                 </button>
               )}
             </div>
-
+            
             {verificationAttempts > 0 && verificationAttempts < 5 && (
               <div className="text-xs text-orange-600 bg-orange-50 p-2 rounded">
                 {5 - verificationAttempts} attempts remaining
@@ -575,7 +535,7 @@ const Signin = () => {
           </div>
         </div>
       </div>
-
+      
       <div className="hidden lg:flex flex-1 bg-gradient-to-br from-red-600 to-red-800 relative overflow-hidden">
         <div className="relative z-10 flex items-center justify-center p-8 text-white">
           <div className="text-center space-y-6 max-w-md">
