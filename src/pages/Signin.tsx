@@ -25,6 +25,14 @@ const KenicLogo = ({ className = "w-12 h-12" }) => (
 
 const BASE_URL = 'https://api.digikenya.co.ke';
 
+// Cookie helper function
+function setCookie(name, value, days = 7) {
+  const date = new Date();
+  date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+  const expires = `expires=${date.toUTCString()}`;
+  document.cookie = `${name}=${value}; ${expires}; domain=.digikenya.co.ke; path=/; secure; samesite=lax`;
+}
+
 // InputField Component
 const InputField = React.memo(({ id, type, placeholder, value, onChange, icon: Icon, error, showPasswordToggle, showPassword, onPasswordToggle }) => {
   return (
@@ -197,9 +205,7 @@ const Signin = () => {
       const data = await response.json();
       
       if (!response.ok) {
-        // Check if it's an email verification error
         if (response.status === 403 && data.detail?.includes('verify your email')) {
-          // Automatically send verification email
           await handleResendVerification();
           setCurrentStep('verify');
           setErrors({ 
@@ -210,9 +216,12 @@ const Signin = () => {
         throw new Error(data.detail || 'Sign-in failed');
       }
       
-      localStorage.setItem('access_token', data.access_token);
-      localStorage.setItem('user', JSON.stringify({ email: formData.email }));
-      navigate('/dashboard');
+      // Set cookies instead of localStorage
+      setCookie('access_token', data.access_token);
+      setCookie('user', JSON.stringify({ email: formData.email }));
+      
+      // Redirect to console dashboard
+      window.location.href = 'https://console.digikenya.co.ke/';
       
     } catch (error) {
       setErrors({ api: error.message });
@@ -263,12 +272,15 @@ const Signin = () => {
       const loginData = await loginResponse.json();
       
       if (loginResponse.ok) {
-        localStorage.setItem('access_token', loginData.access_token);
-        localStorage.setItem('user', JSON.stringify({
+        // Set cookies
+        setCookie('access_token', loginData.access_token);
+        setCookie('user', JSON.stringify({
           email: formData.email,
           is_email_verified: true
         }));
-        navigate('/dashboard');
+        
+        // Redirect to console dashboard
+        window.location.href = 'https://console.digikenya.co.ke/';
       } else {
         setErrors({ success: 'Email verified successfully! Please try signing in again.' });
         setTimeout(() => {
@@ -335,9 +347,12 @@ const Signin = () => {
       if (!res.ok) {
         throw new Error(data.detail || 'Google authentication failed');
       }
-      localStorage.setItem('access_token', data.access_token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      navigate('/dashboard');
+      // Set cookies
+      setCookie('access_token', data.access_token);
+      setCookie('user', JSON.stringify(data.user));
+      
+      // Redirect to console dashboard
+      window.location.href = 'https://console.digikenya.co.ke/';
     } catch (error) {
       setErrors({ api: error.message });
     } finally {
