@@ -16,7 +16,6 @@ const LockIcon = ({ className }) => (
   </svg>
 );
 
-// KENIC Logo Component
 const KenicLogo = ({ className = "w-12 h-12" }) => (
   <div className={`bg-red-600 rounded-lg flex items-center justify-center ${className}`}>
     <span className="text-white font-bold text-lg">.KE</span>
@@ -197,11 +196,8 @@ const Signin = () => {
         throw new Error(data.detail || 'Sign-in failed');
       }
       
-      // Backend sets cookies; store user in sessionStorage for UI
-      sessionStorage.setItem('user', JSON.stringify({ email: formData.email }));
-      setTimeout(() => {
-        window.location.href = 'https://console.digikenya.co.ke/';
-      }, 100);
+      sessionStorage.setItem('user', JSON.stringify(data.user));
+      window.location.href = data.redirect_url;
       
     } catch (error) {
       console.error('Signin: Login error:', error);
@@ -239,11 +235,8 @@ const Signin = () => {
         throw new Error(data.detail || 'Invalid OTP');
       }
       
-      // Backend sets cookies; store user in sessionStorage for UI
-      sessionStorage.setItem('user', JSON.stringify({ email: formData.email, is_email_verified: true }));
-      setTimeout(() => {
-        window.location.href = 'https://console.digikenya.co.ke/';
-      }, 100);
+      sessionStorage.setItem('user', JSON.stringify(data.user));
+      window.location.href = data.redirect_url;
       
     } catch (error) {
       console.error('Signin: OTP verify error:', error);
@@ -307,11 +300,8 @@ const Signin = () => {
       if (!res.ok) {
         throw new Error(data.detail || 'Google authentication failed');
       }
-      // Backend sets cookies; store user in sessionStorage for UI
       sessionStorage.setItem('user', JSON.stringify(data.user));
-      setTimeout(() => {
-        window.location.href = 'https://console.digikenya.co.ke/';
-      }, 100);
+      window.location.href = data.redirect_url;
     } catch (error) {
       console.error('Signin: Google auth error:', error);
       setErrors({ api: error.message });
@@ -320,6 +310,7 @@ const Signin = () => {
     }
   };
 
+  // ... (keep JSX as-is from your original form)
   if (currentStep === 'signin') {
     return (
       <div className="font-sans min-h-screen flex flex-col lg:flex-row">
