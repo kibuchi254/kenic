@@ -25,7 +25,7 @@ const KenicLogo = ({ className = "w-12 h-12" }) => (
 
 const BASE_URL = 'https://api.digikenya.co.ke';
 
-function setCookie(name, value, days = 7) {
+function setCookie(name: string, value: string, days = 7) {
   const date = new Date();
   date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
   const expires = `expires=${date.toUTCString()}`;
@@ -115,7 +115,7 @@ const OTPInput = ({ otp, setOtp, error }) => {
       )}
     </div>
   );
-});
+};
 
 const Signin = () => {
   const [currentStep, setCurrentStep] = useState('signin');
@@ -185,7 +185,7 @@ const Signin = () => {
       const response = await fetch(`${BASE_URL}/customer/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', // Allow cookies to be sent
+        credentials: 'include',
         body: JSON.stringify({ email: formData.email, password: formData.password }),
       });
       
@@ -204,14 +204,12 @@ const Signin = () => {
         throw new Error(data.detail || 'Sign-in failed');
       }
       
-      // Set cookies
       setCookie('access_token', data.access_token);
       setCookie('user', JSON.stringify({ email: formData.email }));
       if (data.refresh_token) {
-        setCookie('refresh_token', data.refresh_token, 30); // Longer expiry for refresh token
+        setCookie('refresh_token', data.refresh_token, 30);
       }
       
-      // Redirect after a slight delay to ensure cookie is set
       setTimeout(() => {
         window.location.href = 'https://console.digikenya.co.ke/';
       }, 100);
