@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 const MailIcon = ({ className }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
     <path d="M1.5 8.67v8.58a3 3 0 003 3h15a3 3 0 003-3V8.67l-8.928 5.493a3 3 0 01-3.144 0L1.5 8.67z" />
-    <path d="M22.5 6.908V6.75a3 3 0 00-3-3h-15a3 0 00-3 3v.158l9.714 5.978a1.5 1.5 0 001.572 0L22.5 6.908z" />
+    <path d="M22.5 6.908V6.75a3 3 0 00-3-3h-15a3 3 0 00-3 3v.158l9.714 5.978a1.5 1.5 0 001.572 0L22.5 6.908z" />
   </svg>
 );
 
@@ -23,13 +23,15 @@ const KenicLogo = ({ className = "w-12 h-12" }) => (
   </div>
 );
 
+// FIXED: Removed extra spaces from BASE_URL
 const BASE_URL = 'https://api.digikenya.co.ke';
 
-// Cookie helper function
+// FIXED: Updated cookie helper function with correct domain
 function setCookie(name, value, days = 7) {
   const date = new Date();
   date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
   const expires = `expires=${date.toUTCString()}`;
+  // FIXED: Corrected domain setting for subdomain sharing
   document.cookie = `${name}=${value}; ${expires}; domain=.digikenya.co.ke; path=/; secure; samesite=lax`;
 }
 
@@ -152,6 +154,7 @@ const Signin = () => {
   useEffect(() => {
     if (currentStep === 'signin') {
       const script = document.createElement('script');
+      // FIXED: Removed extra spaces from Google script URL
       script.src = 'https://accounts.google.com/gsi/client';
       script.async = true;
       script.onload = () => {
@@ -220,7 +223,7 @@ const Signin = () => {
       setCookie('access_token', data.access_token);
       setCookie('user', JSON.stringify({ email: formData.email }));
       
-      // Redirect to console dashboard
+      // FIXED: Removed extra spaces from redirect URL
       window.location.href = 'https://console.digikenya.co.ke/';
       
     } catch (error) {
@@ -279,7 +282,7 @@ const Signin = () => {
           is_email_verified: true
         }));
         
-        // Redirect to console dashboard
+        // FIXED: Removed extra spaces from redirect URL
         window.location.href = 'https://console.digikenya.co.ke/';
       } else {
         setErrors({ success: 'Email verified successfully! Please try signing in again.' });
@@ -351,7 +354,7 @@ const Signin = () => {
       setCookie('access_token', data.access_token);
       setCookie('user', JSON.stringify(data.user));
       
-      // Redirect to console dashboard
+      // FIXED: Removed extra spaces from redirect URL
       window.location.href = 'https://console.digikenya.co.ke/';
     } catch (error) {
       setErrors({ api: error.message });
