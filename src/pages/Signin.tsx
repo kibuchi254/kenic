@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, AlertCircle, Loader2, Shield, Check, Mail, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 const MailIcon = ({ className }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
     <path d="M1.5 8.67v8.58a3 3 0 003 3h15a3 3 0 003-3V8.67l-8.928 5.493a3 3 0 01-3.144 0L1.5 8.67z" />
-    <path d="M22.5 6.908V6.75a3 3 0 00-3-3h-15a3 3 0 00-3 3v.158l9.714 5.978a1.5 1.5 0 001.572 0L22.5 6.908z" />
+    <path d="M22.5 6.908V6.75a3 3 0 00-3-3h-15a3 0 00-3 3v.158l9.714 5.978a1.5 1.5 0 001.572 0L22.5 6.908z" />
   </svg>
 );
 
@@ -23,19 +23,19 @@ const KenicLogo = ({ className = "w-12 h-12" }) => (
   </div>
 );
 
-// FIXED: Removed extra spaces from BASE_URL
 const BASE_URL = 'https://api.digikenya.co.ke';
 
-// FIXED: Updated cookie helper function with correct domain
 function setCookie(name, value, days = 7) {
   const date = new Date();
   date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
   const expires = `expires=${date.toUTCString()}`;
-  // FIXED: Corrected domain setting for subdomain sharing
-  document.cookie = `${name}=${value}; ${expires}; domain=.digikenya.co.ke; path=/; secure; samesite=lax`;
+  const cookieString = `${name}=${value}; ${expires}; domain=.digikenya.co.ke; path=/; secure; samesite=lax`;
+  console.log('Signin setCookie:', cookieString);
+  document.cookie = cookieString;
+  // Fallback: Store in sessionStorage for immediate access
+  sessionStorage.setItem(name, value);
 }
 
-// InputField Component
 const InputField = React.memo(({ id, type, placeholder, value, onChange, icon: Icon, error, showPasswordToggle, showPassword, onPasswordToggle }) => {
   return (
     <div className="space-y-2">
@@ -73,7 +73,6 @@ const InputField = React.memo(({ id, type, placeholder, value, onChange, icon: I
   );
 });
 
-// OTP Input Component
 const OTPInput = ({ otp, setOtp, error }) => {
   return (
     <div className="space-y-2">
@@ -87,19 +86,15 @@ const OTPInput = ({ otp, setOtp, error }) => {
             onChange={(e) => {
               const value = e.target.value;
               if (!/^\d*$/.test(value)) return;
-              
               const newOtp = [...otp];
               newOtp[index] = value;
               setOtp(newOtp);
-              
-              // Auto-focus next input
               if (value && index < 5) {
                 const nextInput = document.querySelector(`input[data-index="${index + 1}"]`);
                 if (nextInput) nextInput.focus();
               }
             }}
             onKeyDown={(e) => {
-              // Handle backspace
               if (e.key === 'Backspace' && !otp[index] && index > 0) {
                 const prevInput = document.querySelector(`input[data-index="${index - 1}"]`);
                 if (prevInput) prevInput.focus();
@@ -120,10 +115,10 @@ const OTPInput = ({ otp, setOtp, error }) => {
       )}
     </div>
   );
-};
+});
 
 const Signin = () => {
-  const [currentStep, setCurrentStep] = useState('signin'); // 'signin' or 'verify'
+  const [currentStep, setCurrentStep] = useState('signin');
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [errors, setErrors] = useState({});
@@ -133,7 +128,6 @@ const Signin = () => {
   const [verificationAttempts, setVerificationAttempts] = useState(0);
   const navigate = useNavigate();
 
-  // Cooldown timer for resend OTP
   useEffect(() => {
     if (resendCooldown > 0) {
       const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
@@ -141,20 +135,9 @@ const Signin = () => {
     }
   }, [resendCooldown]);
 
-  // Handle input change without debounce for better responsiveness
-  const handleInputChange = (field) => (e) => {
-    const value = e.target.value;
-    setFormData((prev) => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors((prev) => ({ ...prev, [field]: '' }));
-    }
-  };
-
-  // Load Google Sign-In script
   useEffect(() => {
     if (currentStep === 'signin') {
       const script = document.createElement('script');
-      // FIXED: Removed extra spaces from Google script URL
       script.src = 'https://accounts.google.com/gsi/client';
       script.async = true;
       script.onload = () => {
@@ -202,10 +185,12 @@ const Signin = () => {
       const response = await fetch(`${BASE_URL}/customer/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Allow cookies to be sent
         body: JSON.stringify({ email: formData.email, password: formData.password }),
       });
       
       const data = await response.json();
+      console.log('Signin: Login response:', data);
       
       if (!response.ok) {
         if (response.status === 403 && data.detail?.includes('verify your email')) {
@@ -219,14 +204,20 @@ const Signin = () => {
         throw new Error(data.detail || 'Sign-in failed');
       }
       
-      // Set cookies instead of localStorage
+      // Set cookies
       setCookie('access_token', data.access_token);
       setCookie('user', JSON.stringify({ email: formData.email }));
+      if (data.refresh_token) {
+        setCookie('refresh_token', data.refresh_token, 30); // Longer expiry for refresh token
+      }
       
-      // FIXED: Removed extra spaces from redirect URL
-      window.location.href = 'https://console.digikenya.co.ke/';
+      // Redirect after a slight delay to ensure cookie is set
+      setTimeout(() => {
+        window.location.href = 'https://console.digikenya.co.ke/';
+      }, 100);
       
     } catch (error) {
+      console.error('Signin: Login error:', error);
       setErrors({ api: error.message });
     } finally {
       setIsLoading(false);
@@ -249,41 +240,37 @@ const Signin = () => {
       const response = await fetch(`${BASE_URL}/customer/auth/verify-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email: formData.email, 
-          otp: otpString 
-        }),
+        credentials: 'include',
+        body: JSON.stringify({ email: formData.email, otp: otpString }),
       });
       
       const data = await response.json();
+      console.log('Signin: OTP verify response:', data);
       
       if (!response.ok) {
         setVerificationAttempts(prev => prev + 1);
         throw new Error(data.detail || 'Invalid OTP');
       }
       
-      // Success - now login the user
       const loginResponse = await fetch(`${BASE_URL}/customer/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email: formData.email, 
-          password: formData.password 
-        }),
+        credentials: 'include',
+        body: JSON.stringify({ email: formData.email, password: formData.password }),
       });
       
       const loginData = await loginResponse.json();
+      console.log('Signin: Post-OTP login response:', loginData);
       
       if (loginResponse.ok) {
-        // Set cookies
         setCookie('access_token', loginData.access_token);
-        setCookie('user', JSON.stringify({
-          email: formData.email,
-          is_email_verified: true
-        }));
-        
-        // FIXED: Removed extra spaces from redirect URL
-        window.location.href = 'https://console.digikenya.co.ke/';
+        setCookie('user', JSON.stringify({ email: formData.email, is_email_verified: true }));
+        if (loginData.refresh_token) {
+          setCookie('refresh_token', loginData.refresh_token, 30);
+        }
+        setTimeout(() => {
+          window.location.href = 'https://console.digikenya.co.ke/';
+        }, 100);
       } else {
         setErrors({ success: 'Email verified successfully! Please try signing in again.' });
         setTimeout(() => {
@@ -293,6 +280,7 @@ const Signin = () => {
       }
       
     } catch (error) {
+      console.error('Signin: OTP verify error:', error);
       setErrors({ otp: error.message });
     } finally {
       setIsLoading(false);
@@ -304,9 +292,10 @@ const Signin = () => {
       const response = await fetch(`${BASE_URL}/customer/auth/resend-verification`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ email: formData.email }),
       });
-      
+      console.log('Signin: Resend verification response:', response.status);
       if (response.ok) {
         setResendCooldown(60);
         setOtp(['', '', '', '', '', '']);
@@ -315,7 +304,7 @@ const Signin = () => {
       }
       return false;
     } catch (error) {
-      console.error('Failed to resend verification:', error);
+      console.error('Signin: Resend verification error:', error);
       return false;
     }
   };
@@ -344,26 +333,30 @@ const Signin = () => {
       const res = await fetch(`${BASE_URL}/customer/auth/google-auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ credential: response.credential }),
       });
       const data = await res.json();
+      console.log('Signin: Google auth response:', data);
       if (!res.ok) {
         throw new Error(data.detail || 'Google authentication failed');
       }
-      // Set cookies
       setCookie('access_token', data.access_token);
       setCookie('user', JSON.stringify(data.user));
-      
-      // FIXED: Removed extra spaces from redirect URL
-      window.location.href = 'https://console.digikenya.co.ke/';
+      if (data.refresh_token) {
+        setCookie('refresh_token', data.refresh_token, 30);
+      }
+      setTimeout(() => {
+        window.location.href = 'https://console.digikenya.co.ke/';
+      }, 100);
     } catch (error) {
+      console.error('Signin: Google auth error:', error);
       setErrors({ api: error.message });
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Signin Form
   if (currentStep === 'signin') {
     return (
       <div className="font-sans min-h-screen flex flex-col lg:flex-row">
@@ -488,7 +481,6 @@ const Signin = () => {
     );
   }
 
-  // Email Verification Form
   return (
     <div className="font-sans min-h-screen flex flex-col lg:flex-row">
       <div className="flex-1 flex items-center justify-center p-4 sm:p-8 bg-gradient-to-br from-gray-50 to-white">
