@@ -456,8 +456,14 @@ const Signin = () => {
         // Login successful with token
         login(access_token, user);
         
+        // Get clean redirect URL
         const redirectUrl = getRedirectUrl(data.redirect_url);
-        window.location.href = redirectUrl;
+        
+        // Add the token as a URL parameter for the console to pick up
+        const redirectWithToken = `${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(access_token)}`;
+        
+        console.log('Redirecting to:', redirectWithToken);
+        window.location.href = redirectWithToken;
         
       } else if (data.error && data.error.code === 'EMAIL_NOT_VERIFIED') {
         const resendSuccess = await handleResendVerification();
@@ -507,14 +513,31 @@ const Signin = () => {
     try {
       const data = await apiService.verifyEmail(formData.email.trim(), otpString);
 
-      if (!data.success) {
+      // Handle successful verification
+      if (data.message && data.message.includes('successful') && data.user) {
+        const user = data.user;
+        let access_token = extractTokenFromRedirectUrl(data.redirect_url) || data.access_token;
+        
+        if (!access_token) {
+          throw new ApiError('No access token received after verification');
+        }
+
+        login(access_token, user);
+        
+        // Add the token as a URL parameter for the console to pick up
+        const redirectWithToken = `${CONSOLE_URL}${CONSOLE_URL.includes('?') ? '&' : '?'}token=${encodeURIComponent(access_token)}`;
+        window.location.href = redirectWithToken;
+      } else if (data.success && data.data) {
+        // Handle standard success response format
+        const { access_token, user } = data.data;
+        login(access_token, user);
+        
+        const redirectWithToken = `${CONSOLE_URL}${CONSOLE_URL.includes('?') ? '&' : '?'}token=${encodeURIComponent(access_token)}`;
+        window.location.href = redirectWithToken;
+      } else {
         setVerificationAttempts((prev) => prev + 1);
         throw new ApiError(data.error?.detail || 'Invalid verification code');
       }
-
-      const { access_token, user } = data.data;
-      login(access_token, user);
-      window.location.href = CONSOLE_URL;
 
     } catch (error) {
       console.error('Signin: OTP verify error:', error);
@@ -585,7 +608,12 @@ const Signin = () => {
         login(access_token, user);
         
         const redirectUrl = getRedirectUrl(data.redirect_url);
-        window.location.href = redirectUrl;
+        
+        // Add the token as a URL parameter for the console to pick up
+        const redirectWithToken = `${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(access_token)}`;
+        
+        console.log('Google auth redirecting to:', redirectWithToken);
+        window.location.href = redirectWithToken;
       } else {
         throw new ApiError(data.error?.detail || 'Google authentication failed');
       }
