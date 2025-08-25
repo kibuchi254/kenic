@@ -346,10 +346,28 @@ const Signin = () => {
   const getRedirectUrl = (redirect_url: any) => {
     if (!redirect_url) return CONSOLE_URL;
     
+    // If redirect_url is a string that looks like it contains embedded JSON
     if (typeof redirect_url === 'string') {
+      // Check if it contains embedded JSON (starts with a URL but has JSON after)
+      const match = redirect_url.match(/^(https?:\/\/[^?]+)\?token=(.+)$/);
+      if (match) {
+        try {
+          // Try to parse the token parameter as JSON
+          const tokenData = JSON.parse(decodeURIComponent(match[2]));
+          if (tokenData.data && tokenData.data.redirect_url && tokenData.data.redirect_url.web) {
+            return tokenData.data.redirect_url.web;
+          }
+        } catch (e) {
+          console.warn('Failed to parse embedded JSON in redirect URL:', e);
+        }
+        // Return the base URL without the token parameter
+        return match[1];
+      }
+      // Clean any quotes and return
       return redirect_url.replace(/['"]+/g, '');
     }
     
+    // If it's an object with web property
     if (redirect_url.web) {
       return redirect_url.web.replace(/['"]+/g, '');
     }
@@ -367,27 +385,74 @@ const Signin = () => {
     try {
       const data = await apiService.login(formData.email.trim(), formData.password);
 
-      if (!data.success) {
-        if (data.error && data.error.code === 'EMAIL_NOT_VERIFIED') {
-          const resendSuccess = await handleResendVerification();
-          if (resendSuccess) {
-            setCurrentStep('verify');
-            setErrors({
-              info: 'Please verify your email address. We\'ve sent a verification code to your email.',
-            });
-          } else {
-            setErrors({ api: 'Failed to send verification code. Please try again.' });
+      // Handle the actual API response structure
+      // The API returns: { message: "Login successful", user: {...}, redirect_url: "..." }
+      // Check for success based on the presence of message and user
+      if (data.message && data.message.includes('successful') && data.user) {
+        // Extract user and token info
+        const user = data.user;
+        
+        // Try to extract access_token from the redirect_url if it contains embedded JSON
+        let access_token = null;
+        if (data.redirect_url && typeof data.redirect_url === 'string') {
+          const match = data.redirect_url.match(/\?token=(.+)$/);
+          if (match) {
+            try {
+              const tokenData = JSON.parse(decodeURIComponent(match[1]));
+              if (tokenData.data && tokenData.data.access_token) {
+                access_token = tokenData.data.access_token;
+              }
+            } catch (e) {
+              console.warn('Failed to extract token from redirect URL:', e);
+            }
           }
-          return;
         }
-        throw new ApiError(data.error?.detail || 'Sign-in failed');
+        
+        // If we couldn't extract token, try to get it from data directly
+        if (!access_token && data.access_token) {
+          access_token = data.access_token;
+        }
+        
+        // If we still don't have a token, this might be an email verification case
+        if (!access_token) {
+          // Check if email needs verification
+          if (user && !user.is_email_verified) {
+            const resendSuccess = await handleResendVerification();
+            if (resendSuccess) {
+              setCurrentStep('verify');
+              setErrors({
+                info: 'Please verify your email address. We\'ve sent a verification code to your email.',
+              });
+            } else {
+              setErrors({ api: 'Failed to send verification code. Please try again.' });
+            }
+            return;
+          } else {
+            throw new ApiError('No access token received from server');
+          }
+        }
+        
+        // Login successful with token
+        login(access_token, user);
+        
+        const redirectUrl = getRedirectUrl(data.redirect_url);
+        window.location.href = redirectUrl;
+        
+      } else if (data.error && data.error.code === 'EMAIL_NOT_VERIFIED') {
+        const resendSuccess = await handleResendVerification();
+        if (resendSuccess) {
+          setCurrentStep('verify');
+          setErrors({
+            info: 'Please verify your email address. We\'ve sent a verification code to your email.',
+          });
+        } else {
+          setErrors({ api: 'Failed to send verification code. Please try again.' });
+        }
+        return;
+      } else {
+        // Handle other error cases
+        throw new ApiError(data.error?.detail || data.message || 'Sign-in failed');
       }
-
-      const { access_token, user, redirect_url } = data.data;
-      login(access_token, user);
-      
-      const redirectUrl = getRedirectUrl(redirect_url);
-      window.location.href = redirectUrl;
 
     } catch (error) {
       console.error('Signin: Login error:', error);
@@ -479,15 +544,43 @@ const Signin = () => {
     try {
       const data = await apiService.googleAuth(response.credential);
       
-      if (!data.success) {
+      // Handle the actual API response structure for Google auth
+      if (data.message && data.message.includes('successful') && data.user) {
+        // Extract user and token info
+        const user = data.user;
+        
+        // Try to extract access_token from the redirect_url if it contains embedded JSON
+        let access_token = null;
+        if (data.redirect_url && typeof data.redirect_url === 'string') {
+          const match = data.redirect_url.match(/\?token=(.+)$/);
+          if (match) {
+            try {
+              const tokenData = JSON.parse(decodeURIComponent(match[1]));
+              if (tokenData.data && tokenData.data.access_token) {
+                access_token = tokenData.data.access_token;
+              }
+            } catch (e) {
+              console.warn('Failed to extract token from Google auth redirect URL:', e);
+            }
+          }
+        }
+        
+        // If we couldn't extract token, try to get it from data directly
+        if (!access_token && data.access_token) {
+          access_token = data.access_token;
+        }
+        
+        if (!access_token) {
+          throw new ApiError('No access token received from Google authentication');
+        }
+        
+        login(access_token, user);
+        
+        const redirectUrl = getRedirectUrl(data.redirect_url);
+        window.location.href = redirectUrl;
+      } else {
         throw new ApiError(data.error?.detail || 'Google authentication failed');
       }
-      
-      const { access_token, user, redirect_url } = data.data;
-      login(access_token, user);
-      
-      const redirectUrl = getRedirectUrl(redirect_url);
-      window.location.href = redirectUrl;
     } catch (error) {
       console.error('Signin: Google auth error:', error);
       if (error instanceof ApiError) {
