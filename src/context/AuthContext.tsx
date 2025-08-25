@@ -57,64 +57,91 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         },
         credentials: 'include',
       });
+      
+      if (!response.ok) {
+        console.error('AuthProvider: Token validation failed with status:', response.status);
+        return false;
+      }
+      
       const data = await response.json();
       console.log('AuthProvider: Token validation response:', response.status, data);
-      return response.ok && data.success;
+      return data.success;
     } catch (error) {
       console.error('AuthProvider: Token validation error:', error);
       return false;
     }
   }, []);
 
+  // Clear all stored auth data
+  const clearAuthData = () => {
+    localStorage.removeItem('access_token');
+    sessionStorage.removeItem('access_token');
+    localStorage.removeItem('user');
+    sessionStorage.removeItem('user');
+    // Clear cookie by setting it to expire
+    document.cookie = 'session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+  };
+
   useEffect(() => {
     const initializeAuth = async () => {
       console.log('AuthProvider: Initializing auth...');
-      const urlParams = new URLSearchParams(window.location.search);
-      const urlToken = urlParams.get('token');
-      const storedToken = getCookie('session_token') || localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
-      const storedUser = localStorage.getItem('user') || sessionStorage.getItem('user');
+      
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlToken = urlParams.get('token');
+        const storedToken = getCookie('session_token') || localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+        const storedUser = localStorage.getItem('user') || sessionStorage.getItem('user');
 
-      console.log('AuthProvider: urlToken=', urlToken);
-      console.log('AuthProvider: storedToken=', storedToken);
-      console.log('AuthProvider: storedUser=', storedUser);
+        console.log('AuthProvider: urlToken=', urlToken);
+        console.log('AuthProvider: storedToken=', storedToken);
+        console.log('AuthProvider: storedUser=', storedUser);
 
-      let tokenToValidate = urlToken || storedToken;
+        let tokenToValidate = urlToken || storedToken;
 
-      if (tokenToValidate) {
-        const isValid = await validateToken(tokenToValidate);
-        if (isValid) {
-          setToken(tokenToValidate);
-          setIsAuthenticated(true);
+        if (tokenToValidate) {
+          const isValid = await validateToken(tokenToValidate);
+          
+          if (isValid) {
+            setToken(tokenToValidate);
+            setIsAuthenticated(true);
 
-          if (storedUser) {
-            try {
-              const parsedUser: User = JSON.parse(storedUser);
-              setUser(parsedUser);
-              console.log('AuthProvider: User set from storage:', parsedUser);
-            } catch (e) {
-              console.error('AuthProvider: Invalid stored user data:', e);
+            if (storedUser) {
+              try {
+                const parsedUser: User = JSON.parse(storedUser);
+                setUser(parsedUser);
+                console.log('AuthProvider: User set from storage:', parsedUser);
+              } catch (e) {
+                console.error('AuthProvider: Invalid stored user data:', e);
+                // Clear invalid user data
+                localStorage.removeItem('user');
+                sessionStorage.removeItem('user');
+              }
             }
-          }
 
-          if (urlToken) {
-            localStorage.setItem('access_token', urlToken);
-            sessionStorage.setItem('access_token', urlToken);
-            window.history.replaceState({}, document.title, window.location.pathname);
+            if (urlToken) {
+              localStorage.setItem('access_token', urlToken);
+              sessionStorage.setItem('access_token', urlToken);
+              window.history.replaceState({}, document.title, window.location.pathname);
+            }
+          } else {
+            console.warn('AuthProvider: Token invalid, clearing state');
+            clearAuthData();
+            setToken(null);
+            setUser(null);
+            setIsAuthenticated(false);
           }
         } else {
-          console.warn('AuthProvider: Token invalid, clearing state');
-          localStorage.removeItem('access_token');
-          sessionStorage.removeItem('access_token');
-          localStorage.removeItem('user');
-          sessionStorage.removeItem('user');
-          setToken(null);
-          setUser(null);
-          setIsAuthenticated(false);
+          console.warn('AuthProvider: No token found');
         }
-      } else {
-        console.warn('AuthProvider: No token found');
+      } catch (error) {
+        console.error('AuthProvider: Initialization error:', error);
+        clearAuthData();
+        setToken(null);
+        setUser(null);
+        setIsAuthenticated(false);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
     initializeAuth();
@@ -133,16 +160,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     console.log('AuthProvider: Logging out');
-    fetch(`${BASE_URL}/customer/auth/logout`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      credentials: 'include',
-    }).catch((error) => console.error('AuthProvider: Logout error:', error));
+    
+    // Make logout API call but don't block the logout process
+    if (token) {
+      fetch(`${BASE_URL}/customer/auth/logout`, {
+        method: 'POST',
+        headers: { 
+          Authorization: `Bearer ${token}`, 
+          'Content-Type': 'application/json' 
+        },
+        credentials: 'include',
+      }).catch((error) => console.error('AuthProvider: Logout error:', error));
+    }
 
-    localStorage.removeItem('access_token');
-    sessionStorage.removeItem('access_token');
-    localStorage.removeItem('user');
-    sessionStorage.removeItem('user');
+    clearAuthData();
     setToken(null);
     setUser(null);
     setIsAuthenticated(false);

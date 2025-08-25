@@ -1,31 +1,155 @@
 import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, AlertCircle, Loader2, Shield, Check, Mail, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/context/AuthContext'; // Import useAuth from AuthContext
+import { useAuth } from '@/context/AuthContext';
 
-// React Icons for Email and Password
-const MailIcon = ({ className }) => (
+// Configuration constants
+const BASE_URL = 'https://api.digikenya.co.ke';
+const GOOGLE_CLIENT_ID = '1086172926615-vtjrru158m0vgnt5s0aq8mdbjj49drub.apps.googleusercontent.com';
+const CONSOLE_URL = 'https://console.digikenya.co.ke';
+
+// API Endpoints
+const API_ENDPOINTS = {
+  LOGIN: '/customer/auth/login',
+  GOOGLE_AUTH: '/customer/auth/google-auth',
+  VERIFY_EMAIL: '/customer/auth/verify-email',
+  RESEND_VERIFICATION: '/customer/auth/resend-verification',
+};
+
+// Storage keys
+const STORAGE_KEYS = {
+  ACCESS_TOKEN: 'access_token',
+  USER: 'user',
+};
+
+// API Error class
+class ApiError extends Error {
+  constructor(message: string, public statusCode?: number, public code?: string, public details?: any) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+// API Service
+const apiService = {
+  async makeRequest<T>(endpoint: string, options: RequestInit = {}): Promise<any> {
+    const url = `${BASE_URL}${endpoint}`;
+    
+    const config: RequestInit = {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        ...options.headers,
+      },
+      credentials: 'include',
+    };
+
+    try {
+      console.log(`API Request: ${config.method || 'GET'} ${url}`);
+      
+      const response = await fetch(url, config);
+      const data = await response.json();
+
+      console.log(`API Response: ${response.status}`, data);
+
+      if (!response.ok) {
+        throw new ApiError(
+          data.error?.detail || data.message || `HTTP ${response.status}`,
+          response.status,
+          data.error?.code,
+          data
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      
+      console.error('API Request failed:', error);
+      throw new ApiError(
+        error instanceof Error ? error.message : 'Network request failed'
+      );
+    }
+  },
+
+  async login(email: string, password: string) {
+    return this.makeRequest(API_ENDPOINTS.LOGIN, {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+  },
+
+  async googleAuth(credential: string) {
+    return this.makeRequest(API_ENDPOINTS.GOOGLE_AUTH, {
+      method: 'POST',
+      body: JSON.stringify({ credential }),
+    });
+  },
+
+  async verifyEmail(email: string, otp: string) {
+    return this.makeRequest(API_ENDPOINTS.VERIFY_EMAIL, {
+      method: 'POST',
+      body: JSON.stringify({ email, otp }),
+    });
+  },
+
+  async resendVerification(email: string) {
+    return this.makeRequest(API_ENDPOINTS.RESEND_VERIFICATION, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+};
+
+// Fixed React Icons for Email and Password with valid SVG paths
+const MailIcon = ({ className }: { className: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-    <path d="M1.5 8.67v8.58a3 3 0 003 3h15a3 3 0 003-3V8.67l-8.928 5.493a3 3 0 01-3.144 0L1.5 8.67z" />
-    <path d="M22.5 6.908V6.75a3 3 0 00-3-3h-15a3 0 00-3 3v.158l9.714 5.978a1.5 1.5 0 001.572 0L22.5 6.908z" />
+    <path d="M1.5 8.67v8.58a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V8.67l-8.928 5.493a3 3 0 0 1-3.144 0L1.5 8.67Z" />
+    <path d="M22.5 6.908V6.75a3 3 0 0 0-3-3h-15a3 3 0 0 0-3 3v.158l9.714 5.978a1.5 1.5 0 0 0 1.572 0L22.5 6.908Z" />
   </svg>
 );
 
-const LockIcon = ({ className }) => (
+const LockIcon = ({ className }: { className: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-    <path fillRule="evenodd" d="M12 1.5a5.25 5.25 0 00-5.25 5.25v3a3 3 0 00-3 3v6.75a3 3 0 003 3h10.5a3 3 0 003-3v-6.75a3 3 0 00-3-3v-3c0-2.9-2.35-5.25-5.25-5.25zm3.75 8.25v-3a3.75 3.75 0 10-7.5 0v3h7.5z" clipRule="evenodd" />
+    <path fillRule="evenodd" d="M12 1.5a5.25 5.25 0 0 0-5.25 5.25v3a3 3 0 0 0-3 3v6.75a3 3 0 0 0 3 3h10.5a3 3 0 0 0 3-3v-6.75a3 3 0 0 0-3-3v-3c0-2.9-2.35-5.25-5.25-5.25Zm3.75 8.25v-3a3.75 3.75 0 1 0-7.5 0v3h7.5Z" clipRule="evenodd" />
   </svg>
 );
 
-const KenicLogo = ({ className = "w-12 h-12" }) => (
+const KenicLogo = ({ className = "w-12 h-12" }: { className?: string }) => (
   <div className={`bg-red-600 rounded-lg flex items-center justify-center ${className}`}>
     <span className="text-white font-bold text-lg">.KE</span>
   </div>
 );
 
-const BASE_URL = 'https://api.digikenya.co.ke';
+// Input Field Component
+interface InputFieldProps {
+  id: string;
+  type: string;
+  placeholder: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  icon: React.ComponentType<{ className: string }>;
+  error?: string;
+  showPasswordToggle?: boolean;
+  showPassword?: boolean;
+  onPasswordToggle?: () => void;
+}
 
-const InputField = React.memo(({ id, type, placeholder, value, onChange, icon: Icon, error, showPasswordToggle, showPassword, onPasswordToggle }) => {
+const InputField = React.memo<InputFieldProps>(({ 
+  id, 
+  type, 
+  placeholder, 
+  value, 
+  onChange, 
+  icon: Icon, 
+  error, 
+  showPasswordToggle, 
+  showPassword, 
+  onPasswordToggle 
+}) => {
   return (
     <div className="space-y-2">
       <div className="relative">
@@ -38,7 +162,7 @@ const InputField = React.memo(({ id, type, placeholder, value, onChange, icon: I
           placeholder={placeholder}
           value={value}
           onChange={onChange}
-          className={`w-full pl-10 ${showPasswordToggle ? 'pr-12' : 'pr-4'} py-3 border rounded-xl bg-white/50 backdrop-blur-sm focus:ring-2 focus:ring-red-500 focus:border-transparent placeholder-gray-400 ${
+          className={`w-full pl-10 ${showPasswordToggle ? 'pr-12' : 'pr-4'} py-3 border rounded-xl bg-white/50 backdrop-blur-sm focus:ring-2 focus:ring-red-500 focus:border-transparent placeholder-gray-400 transition-all duration-200 ${
             error ? 'border-red-300 bg-red-50/50' : 'border-gray-200 hover:border-gray-300'
           }`}
         />
@@ -46,14 +170,14 @@ const InputField = React.memo(({ id, type, placeholder, value, onChange, icon: I
           <button
             type="button"
             onClick={onPasswordToggle}
-            className="absolute inset-y-0 right-0 pr-3 flex items-center hover:bg-gray-50 rounded-r-xl"
+            className="absolute inset-y-0 right-0 pr-3 flex items-center hover:bg-gray-50 rounded-r-xl transition-colors duration-200"
           >
             {showPassword ? <EyeOff className="h-5 w-5 text-gray-400" /> : <Eye className="h-5 w-5 text-gray-400" />}
           </button>
         )}
       </div>
       {error && (
-        <div className="flex items-center space-x-1 text-red-600 text-sm">
+        <div className="flex items-center space-x-1 text-red-600 text-sm animate-in slide-in-from-top-1 duration-200">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
           <span>{error}</span>
         </div>
@@ -62,7 +186,12 @@ const InputField = React.memo(({ id, type, placeholder, value, onChange, icon: I
   );
 });
 
-const OTPInput = ({ otp, setOtp, error }) => {
+// OTP Input Component
+const OTPInput = ({ otp, setOtp, error }: { 
+  otp: string[], 
+  setOtp: (otp: string[]) => void, 
+  error?: string 
+}) => {
   return (
     <div className="space-y-2">
       <div className="flex justify-center space-x-2">
@@ -70,7 +199,7 @@ const OTPInput = ({ otp, setOtp, error }) => {
           <input
             key={index}
             type="text"
-            maxLength="1"
+            maxLength={1}
             value={otp[index] || ''}
             onChange={(e) => {
               const value = e.target.value;
@@ -79,25 +208,32 @@ const OTPInput = ({ otp, setOtp, error }) => {
               newOtp[index] = value;
               setOtp(newOtp);
               if (value && index < 5) {
-                const nextInput = document.querySelector(`input[data-index="${index + 1}"]`);
+                const nextInput = document.querySelector(`input[data-index="${index + 1}"]`) as HTMLInputElement;
                 if (nextInput) nextInput.focus();
               }
             }}
             onKeyDown={(e) => {
               if (e.key === 'Backspace' && !otp[index] && index > 0) {
-                const prevInput = document.querySelector(`input[data-index="${index - 1}"]`);
+                const prevInput = document.querySelector(`input[data-index="${index - 1}"]`) as HTMLInputElement;
                 if (prevInput) prevInput.focus();
               }
             }}
+            onPaste={(e) => {
+              e.preventDefault();
+              const paste = e.clipboardData.getData('text');
+              if (/^\d{6}$/.test(paste)) {
+                setOtp(paste.split(''));
+              }
+            }}
             data-index={index}
-            className={`w-12 h-12 text-center text-lg font-semibold border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent ${
-              error ? 'border-red-300 bg-red-50' : 'border-gray-300'
+            className={`w-12 h-12 text-center text-lg font-semibold border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all duration-200 ${
+              error ? 'border-red-300 bg-red-50' : 'border-gray-300 hover:border-gray-400'
             }`}
           />
         ))}
       </div>
       {error && (
-        <div className="flex items-center justify-center space-x-1 text-red-600 text-sm">
+        <div className="flex items-center justify-center space-x-1 text-red-600 text-sm animate-in slide-in-from-top-1 duration-200">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
           <span>{error}</span>
         </div>
@@ -106,18 +242,20 @@ const OTPInput = ({ otp, setOtp, error }) => {
   );
 };
 
+// Main Signin Component
 const Signin = () => {
   const [currentStep, setCurrentStep] = useState('signin');
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const [errors, setErrors] = useState({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [verificationAttempts, setVerificationAttempts] = useState(0);
   const navigate = useNavigate();
-  const { login } = useAuth(); // Use AuthContext for login
+  const { login } = useAuth();
 
+  // Cooldown timer effect
   useEffect(() => {
     if (resendCooldown > 0) {
       const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
@@ -125,22 +263,53 @@ const Signin = () => {
     }
   }, [resendCooldown]);
 
+  // Google Sign-In initialization
   useEffect(() => {
     if (currentStep === 'signin') {
+      const initializeGoogleAuth = () => {
+        if (window.google?.accounts?.id) {
+          try {
+            window.google.accounts.id.initialize({
+              client_id: GOOGLE_CLIENT_ID,
+              callback: handleGoogleAuthResponse,
+              auto_select: false,
+              cancel_on_tap_outside: true,
+            });
+            
+            const signinButton = document.getElementById('google-signin-button');
+            if (signinButton) {
+              window.google.accounts.id.renderButton(signinButton, { 
+                theme: 'outline', 
+                size: 'large', 
+                width: 400,
+                text: 'signin_with',
+                shape: 'rectangular',
+              });
+            }
+          } catch (error) {
+            console.error('Google Sign-In initialization error:', error);
+            setErrors(prev => ({ 
+              ...prev, 
+              google: 'Google Sign-In is temporarily unavailable. Please use email sign-in.' 
+            }));
+          }
+        }
+      };
+
       const script = document.createElement('script');
       script.src = 'https://accounts.google.com/gsi/client';
       script.async = true;
-      script.onload = () => {
-        window.google?.accounts.id.initialize({
-          client_id: '1086172926615-vtjrru158m0vgnt5s0aq8mdbjj49drub.apps.googleusercontent.com',
-          callback: handleGoogleAuthResponse,
-        });
-        const signinButton = document.getElementById('google-signin-button');
-        if (signinButton) {
-          window.google.accounts.id.renderButton(signinButton, { theme: 'outline', size: 'large', width: 400 });
-        }
+      script.onload = initializeGoogleAuth;
+      script.onerror = () => {
+        console.error('Failed to load Google Sign-In script');
+        setErrors(prev => ({ 
+          ...prev, 
+          google: 'Failed to load Google Sign-In. Please use email sign-in.' 
+        }));
       };
+      
       document.body.appendChild(script);
+      
       return () => {
         if (document.body.contains(script)) {
           document.body.removeChild(script);
@@ -149,43 +318,54 @@ const Signin = () => {
     }
   }, [currentStep]);
 
-  const handleInputChange = (field) => (e) => {
+  // Form handlers
+  const handleInputChange = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [field]: e.target.value });
-    setErrors((prev) => ({ ...prev, [field]: null }));
+    setErrors((prev) => ({ ...prev, [field]: '' }));
   };
 
   const validateForm = () => {
-    const newErrors = {};
-    if (!formData.email) {
+    const newErrors: Record<string, string> = {};
+    
+    if (!formData.email.trim()) {
       newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Please enter a valid email';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+      newErrors.email = 'Please enter a valid email address';
     }
+    
     if (!formData.password) {
       newErrors.password = 'Password is required';
     } else if (formData.password.length < 6) {
       newErrors.password = 'Password must be at least 6 characters';
     }
+    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e) => {
+  const getRedirectUrl = (redirect_url: any) => {
+    if (!redirect_url) return CONSOLE_URL;
+    
+    if (typeof redirect_url === 'string') {
+      return redirect_url.replace(/['"]+/g, '');
+    }
+    
+    if (redirect_url.web) {
+      return redirect_url.web.replace(/['"]+/g, '');
+    }
+    
+    return CONSOLE_URL;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
+    
     setIsLoading(true);
     setErrors({});
 
     try {
-      const response = await fetch(`${BASE_URL}/customer/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email: formData.email, password: formData.password }),
-      });
-
-      const data = await response.json();
-      console.log('Signin: Login response:', data);
+      const data = await apiService.login(formData.email.trim(), formData.password);
 
       if (!data.success) {
         if (data.error && data.error.code === 'EMAIL_NOT_VERIFIED') {
@@ -200,29 +380,38 @@ const Signin = () => {
           }
           return;
         }
-        throw new Error(data.error?.detail || 'Sign-in failed');
+        throw new ApiError(data.error?.detail || 'Sign-in failed');
       }
 
       const { access_token, user, redirect_url } = data.data;
-      login(access_token, user); // Use AuthContext login
-      // Ensure redirect_url.web is used correctly
-      const redirectUrl = typeof redirect_url === 'string' ? redirect_url : redirect_url.web;
-      window.location.href = redirectUrl.replace(/['"]+/g, ''); // Clean any quotes from URL
+      login(access_token, user);
+      
+      const redirectUrl = getRedirectUrl(redirect_url);
+      window.location.href = redirectUrl;
 
     } catch (error) {
       console.error('Signin: Login error:', error);
-      setErrors({ api: error.message || 'An unexpected error occurred' });
+      if (error instanceof ApiError) {
+        setErrors({ api: error.message });
+      } else {
+        setErrors({ api: 'An unexpected error occurred. Please try again.' });
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleVerifyOTP = async (e) => {
+  const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     const otpString = otp.join('');
 
     if (otpString.length !== 6) {
-      setErrors({ otp: 'Please enter the complete 6-digit OTP' });
+      setErrors({ otp: 'Please enter the complete 6-digit verification code' });
+      return;
+    }
+
+    if (!/^\d{6}$/.test(otpString)) {
+      setErrors({ otp: 'Verification code must contain only numbers' });
       return;
     }
 
@@ -230,28 +419,24 @@ const Signin = () => {
     setErrors({});
 
     try {
-      const response = await fetch(`${BASE_URL}/customer/auth/verify-email`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email: formData.email, otp: otpString }),
-      });
-
-      const data = await response.json();
-      console.log('Signin: OTP verify response:', data);
+      const data = await apiService.verifyEmail(formData.email.trim(), otpString);
 
       if (!data.success) {
         setVerificationAttempts((prev) => prev + 1);
-        throw new Error(data.error?.detail || 'Invalid OTP');
+        throw new ApiError(data.error?.detail || 'Invalid verification code');
       }
 
       const { access_token, user } = data.data;
-      login(access_token, user); // Use AuthContext login
-      window.location.href = 'https://console.digikenya.co.ke';
+      login(access_token, user);
+      window.location.href = CONSOLE_URL;
 
     } catch (error) {
       console.error('Signin: OTP verify error:', error);
-      setErrors({ otp: error.message || 'An unexpected error occurred' });
+      if (error instanceof ApiError) {
+        setErrors({ otp: error.message });
+      } else {
+        setErrors({ otp: 'An unexpected error occurred. Please try again.' });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -259,14 +444,7 @@ const Signin = () => {
 
   const handleResendVerification = async () => {
     try {
-      const response = await fetch(`${BASE_URL}/customer/auth/resend-verification`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email: formData.email }),
-      });
-      const data = await response.json();
-      console.log('Signin: Resend verification response:', data);
+      const data = await apiService.resendVerification(formData.email.trim());
       return data.success;
     } catch (error) {
       console.error('Signin: Resend verification error:', error);
@@ -294,32 +472,47 @@ const Signin = () => {
     setIsLoading(false);
   };
 
-  const handleGoogleAuthResponse = async (response) => {
+  const handleGoogleAuthResponse = async (response: any) => {
     setIsLoading(true);
     setErrors({});
+    
     try {
-      const res = await fetch(`${BASE_URL}/customer/auth/google-auth`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ credential: response.credential }),
-      });
-      const data = await res.json();
-      console.log('Signin: Google auth response:', data);
+      const data = await apiService.googleAuth(response.credential);
+      
       if (!data.success) {
-        throw new Error(data.error?.detail || 'Google authentication failed');
+        throw new ApiError(data.error?.detail || 'Google authentication failed');
       }
+      
       const { access_token, user, redirect_url } = data.data;
-      login(access_token, user); // Use AuthContext login
-      // Ensure redirect_url.web is used correctly
-      const redirectUrl = typeof redirect_url === 'string' ? redirect_url : redirect_url.web;
-      window.location.href = redirectUrl.replace(/['"]+/g, ''); // Clean any quotes from URL
+      login(access_token, user);
+      
+      const redirectUrl = getRedirectUrl(redirect_url);
+      window.location.href = redirectUrl;
     } catch (error) {
       console.error('Signin: Google auth error:', error);
-      setErrors({ api: error.message || 'An unexpected error occurred' });
+      if (error instanceof ApiError) {
+        if (error.message.includes('CORS') || error.message.includes('Failed to fetch')) {
+          setErrors({ 
+            google: 'Google Sign-In is temporarily unavailable. Please use email sign-in instead.' 
+          });
+        } else {
+          setErrors({ google: error.message });
+        }
+      } else {
+        setErrors({ google: 'Google authentication failed. Please try email sign-in.' });
+      }
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Reset form when going back to signin
+  const handleBackToSignin = () => {
+    setCurrentStep('signin');
+    setErrors({});
+    setOtp(['', '', '', '', '', '']);
+    setVerificationAttempts(0);
+    setResendCooldown(0);
   };
 
   if (currentStep === 'signin') {
@@ -340,27 +533,34 @@ const Signin = () => {
             </div>
 
             {errors.api && (
-              <div className="flex items-center space-x-1 text-red-600 text-sm bg-red-50 p-3 rounded-lg">
+              <div className="flex items-center space-x-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg border border-red-200">
                 <AlertCircle className="h-4 w-4 flex-shrink-0" />
                 <span>{errors.api}</span>
               </div>
             )}
 
+            {errors.google && (
+              <div className="flex items-center space-x-2 text-amber-600 text-sm bg-amber-50 p-3 rounded-lg border border-amber-200">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                <span>{errors.google}</span>
+              </div>
+            )}
+
             {errors.info && (
-              <div className="flex items-center space-x-1 text-blue-600 text-sm bg-blue-50 p-3 rounded-lg">
+              <div className="flex items-center space-x-2 text-blue-600 text-sm bg-blue-50 p-3 rounded-lg border border-blue-200">
                 <Mail className="h-4 w-4 flex-shrink-0" />
                 <span>{errors.info}</span>
               </div>
             )}
 
-            <div id="google-signin-button" className="w-full"></div>
+            <div id="google-signin-button" className="w-full flex justify-center"></div>
 
             <div className="relative my-4">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-gray-200" />
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-4 bg-gray-50 text-gray-500">or continue with email</span>
+                <span className="px-4 bg-white text-gray-500">or continue with email</span>
               </div>
             </div>
 
@@ -368,7 +568,7 @@ const Signin = () => {
               <InputField
                 id="signin-email"
                 type="email"
-                placeholder="Enter your email"
+                placeholder="Enter your email address"
                 value={formData.email}
                 onChange={handleInputChange('email')}
                 icon={MailIcon}
@@ -387,14 +587,17 @@ const Signin = () => {
                 onPasswordToggle={() => setShowPassword(!showPassword)}
               />
               <div className="text-right">
-                <a href="#" className="text-sm text-red-600 hover:text-red-700 font-medium">
+                <a 
+                  href="https://digikenya.co.ke/forgot-password" 
+                  className="text-sm text-red-600 hover:text-red-700 font-medium transition-colors duration-200"
+                >
                   Forgot your password?
                 </a>
               </div>
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full h-11 bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                className="w-full h-12 bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200"
               >
                 {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Sign In'}
               </button>
@@ -406,7 +609,7 @@ const Signin = () => {
                 <button
                   type="button"
                   onClick={() => navigate('/signup')}
-                  className="text-red-600 hover:text-red-700 font-medium"
+                  className="text-red-600 hover:text-red-700 font-medium transition-colors duration-200"
                 >
                   Sign up
                 </button>
@@ -416,13 +619,14 @@ const Signin = () => {
         </div>
 
         <div className="hidden lg:flex flex-1 bg-gradient-to-br from-red-600 to-red-800 relative overflow-hidden">
+          <div className="absolute inset-0 bg-black/10"></div>
           <div className="relative z-10 flex items-center justify-center p-8 text-white">
             <div className="text-center space-y-6 max-w-md">
               <div className="w-16 h-16 mx-auto bg-white/20 rounded-full flex items-center justify-center">
                 <Shield className="h-8 w-8" />
               </div>
               <h3 className="text-2xl font-bold">Secure & Fast</h3>
-              <p className="text-red-100 text-base">
+              <p className="text-red-100 text-base leading-relaxed">
                 Access your .KE domain management with enterprise-grade security and fast performance.
               </p>
               <div className="grid grid-cols-1 gap-4 text-left">
@@ -446,18 +650,15 @@ const Signin = () => {
     );
   }
 
+  // OTP Verification Step
   return (
     <div className="font-sans min-h-screen flex flex-col lg:flex-row">
       <div className="flex-1 flex items-center justify-center p-4 sm:p-8 bg-gradient-to-br from-gray-50 to-white">
         <div className="w-full max-w-md space-y-6">
           <div className="text-center space-y-2">
             <button
-              onClick={() => {
-                setCurrentStep('signin');
-                setErrors({});
-                setOtp(['', '', '', '', '', '']);
-              }}
-              className="inline-flex items-center space-x-2 text-gray-600 hover:text-gray-900 mb-4 text-sm"
+              onClick={handleBackToSignin}
+              className="inline-flex items-center space-x-2 text-gray-600 hover:text-gray-900 mb-4 text-sm transition-colors duration-200"
             >
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -474,19 +675,19 @@ const Signin = () => {
             </div>
             <h2 className="text-2xl font-bold text-gray-900">Verify your email</h2>
             <p className="text-gray-600 text-sm">
-              Enter the 6-digit code sent to <span className="font-medium">{formData.email}</span>
+              Enter the 6-digit code sent to <span className="font-medium text-gray-900">{formData.email}</span>
             </p>
           </div>
 
           {errors.success && (
-            <div className="flex items-center space-x-1 text-green-600 text-sm bg-green-50 p-3 rounded-lg">
+            <div className="flex items-center space-x-2 text-green-600 text-sm bg-green-50 p-3 rounded-lg border border-green-200">
               <Check className="h-4 w-4 flex-shrink-0" />
               <span>{errors.success}</span>
             </div>
           )}
 
           {errors.api && (
-            <div className="flex items-center space-x-1 text-red-600 text-sm bg-red-50 p-3 rounded-lg">
+            <div className="flex items-center space-x-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg border border-red-200">
               <AlertCircle className="h-4 w-4 flex-shrink-0" />
               <span>{errors.api}</span>
             </div>
@@ -503,7 +704,7 @@ const Signin = () => {
             <button
               type="submit"
               disabled={isLoading || otp.join('').length !== 6}
-              className="w-full h-11 bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+              className="w-full h-12 bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-all duration-200"
             >
               {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Verify & Sign In'}
             </button>
@@ -521,7 +722,7 @@ const Signin = () => {
                   type="button"
                   onClick={handleResendOTP}
                   disabled={isLoading}
-                  className="text-red-600 hover:text-red-700 font-medium inline-flex items-center space-x-1"
+                  className="text-red-600 hover:text-red-700 font-medium inline-flex items-center space-x-1 transition-colors duration-200"
                 >
                   <RefreshCw className="h-4 w-4" />
                   <span>Resend Code</span>
@@ -530,8 +731,14 @@ const Signin = () => {
             </div>
 
             {verificationAttempts > 0 && verificationAttempts < 5 && (
-              <div className="text-xs text-orange-600 bg-orange-50 p-2 rounded">
+              <div className="text-xs text-orange-600 bg-orange-50 p-2 rounded border border-orange-200">
                 {5 - verificationAttempts} attempts remaining
+              </div>
+            )}
+
+            {verificationAttempts >= 5 && (
+              <div className="text-xs text-red-600 bg-red-50 p-2 rounded border border-red-200">
+                Too many failed attempts. Please try signing in again.
               </div>
             )}
           </div>
@@ -539,30 +746,34 @@ const Signin = () => {
       </div>
 
       <div className="hidden lg:flex flex-1 bg-gradient-to-br from-red-600 to-red-800 relative overflow-hidden">
+        <div className="absolute inset-0 bg-black/10"></div>
         <div className="relative z-10 flex items-center justify-center p-8 text-white">
           <div className="text-center space-y-6 max-w-md">
             <div className="w-16 h-16 mx-auto bg-white/20 rounded-full flex items-center justify-center">
               <Mail className="h-8 w-8" />
             </div>
             <h3 className="text-2xl font-bold">Almost There!</h3>
-            <p className="text-red-100 text-base">
+            <p className="text-red-100 text-base leading-relaxed">
               Please verify your email address to complete the sign-in process and access your account.
             </p>
             <div className="bg-white/10 rounded-lg p-4">
-              <div className="text-sm space-y-2">
-                <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+              <div className="text-sm space-y-3">
+                <div className="flex items-center space-x-3">
+                  <div className="w-2 h-2 bg-green-400 rounded-full flex-shrink-0"></div>
                   <span>Check your inbox</span>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                <div className="flex items-center space-x-3">
+                  <div className="w-2 h-2 bg-green-400 rounded-full flex-shrink-0"></div>
                   <span>Enter the 6-digit code</span>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                <div className="flex items-center space-x-3">
+                  <div className="w-2 h-2 bg-gray-400 rounded-full flex-shrink-0"></div>
                   <span>Access your dashboard</span>
                 </div>
               </div>
+            </div>
+            <div className="text-sm text-red-100 opacity-90">
+              <p>💡 Tip: Check your spam folder if you don't see the email</p>
             </div>
           </div>
         </div>
@@ -570,5 +781,19 @@ const Signin = () => {
     </div>
   );
 };
+
+// Add global window type for Google Sign-In
+declare global {
+  interface Window {
+    google: {
+      accounts: {
+        id: {
+          initialize: (config: any) => void;
+          renderButton: (element: HTMLElement, config: any) => void;
+        };
+      };
+    };
+  }
+}
 
 export default Signin;
