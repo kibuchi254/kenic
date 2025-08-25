@@ -184,8 +184,8 @@ const Signin = () => {
       const data = await response.json();
       console.log('Signin: Login response:', data);
       
-      if (!response.ok) {
-        if (response.status === 403 && data.detail?.includes('verify your email')) {
+      if (!data.success) {
+        if (data.error.code === 'EMAIL_NOT_VERIFIED') {
           await handleResendVerification();
           setCurrentStep('verify');
           setErrors({ 
@@ -193,11 +193,15 @@ const Signin = () => {
           });
           return;
         }
-        throw new Error(data.detail || 'Sign-in failed');
+        throw new Error(data.error.detail || 'Sign-in failed');
       }
       
-      sessionStorage.setItem('user', JSON.stringify(data.user));
-      window.location.href = data.redirect_url;
+      const { access_token, user } = data.data;
+      localStorage.setItem('access_token', access_token);
+      sessionStorage.setItem('access_token', access_token);
+      localStorage.setItem('user', JSON.stringify(user));
+      sessionStorage.setItem('user', JSON.stringify(user));
+      window.location.href = data.data.redirect_url.web;
       
     } catch (error) {
       console.error('Signin: Login error:', error);
@@ -230,13 +234,17 @@ const Signin = () => {
       const data = await response.json();
       console.log('Signin: OTP verify response:', data);
       
-      if (!response.ok) {
+      if (!data.success) {
         setVerificationAttempts(prev => prev + 1);
-        throw new Error(data.detail || 'Invalid OTP');
+        throw new Error(data.error.detail || 'Invalid OTP');
       }
       
-      sessionStorage.setItem('user', JSON.stringify(data.user));
-      window.location.href = data.redirect_url;
+      const { access_token, user } = data.data;
+      localStorage.setItem('access_token', access_token);
+      sessionStorage.setItem('access_token', access_token);
+      localStorage.setItem('user', JSON.stringify(user));
+      sessionStorage.setItem('user', JSON.stringify(user));
+      window.location.href = 'https://console.digikenya.co.ke';
       
     } catch (error) {
       console.error('Signin: OTP verify error:', error);
@@ -254,14 +262,12 @@ const Signin = () => {
         credentials: 'include',
         body: JSON.stringify({ email: formData.email }),
       });
-      console.log('Signin: Resend verification response:', response.status);
-      if (response.ok) {
-        setResendCooldown(60);
-        setOtp(['', '', '', '', '', '']);
-        setVerificationAttempts(0);
-        return true;
+      const data = await response.json();
+      console.log('Signin: Resend verification response:', data);
+      if (!data.success) {
+        return false;
       }
-      return false;
+      return true;
     } catch (error) {
       console.error('Signin: Resend verification error:', error);
       return false;
@@ -277,6 +283,9 @@ const Signin = () => {
     const success = await handleResendVerification();
     
     if (success) {
+      setResendCooldown(60);
+      setOtp(['', '', '', '', '', '']);
+      setVerificationAttempts(0);
       setErrors({ success: 'New verification code sent to your email!' });
     } else {
       setErrors({ api: 'Failed to resend verification code. Please try again.' });
@@ -297,11 +306,15 @@ const Signin = () => {
       });
       const data = await res.json();
       console.log('Signin: Google auth response:', data);
-      if (!res.ok) {
-        throw new Error(data.detail || 'Google authentication failed');
+      if (!data.success) {
+        throw new Error(data.error.detail || 'Google authentication failed');
       }
-      sessionStorage.setItem('user', JSON.stringify(data.user));
-      window.location.href = data.redirect_url;
+      const { access_token, user } = data.data;
+      localStorage.setItem('access_token', access_token);
+      sessionStorage.setItem('access_token', access_token);
+      localStorage.setItem('user', JSON.stringify(user));
+      sessionStorage.setItem('user', JSON.stringify(user));
+      window.location.href = data.data.redirect_url.web;
     } catch (error) {
       console.error('Signin: Google auth error:', error);
       setErrors({ api: error.message });
@@ -310,7 +323,6 @@ const Signin = () => {
     }
   };
 
-  // ... (keep JSX as-is from your original form)
   if (currentStep === 'signin') {
     return (
       <div className="font-sans min-h-screen flex flex-col lg:flex-row">
