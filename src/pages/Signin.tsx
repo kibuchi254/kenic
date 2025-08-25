@@ -352,8 +352,16 @@ const Signin = () => {
       const match = redirect_url.match(/^(https?:\/\/[^?]+)\?token=(.+)$/);
       if (match) {
         try {
-          // Try to parse the token parameter as JSON
-          const tokenData = JSON.parse(decodeURIComponent(match[2]));
+          // The JSON uses single quotes, so we need to fix it before parsing
+          let jsonString = decodeURIComponent(match[2]);
+          // Replace single quotes with double quotes for valid JSON
+          jsonString = jsonString.replace(/'/g, '"');
+          // Handle Python-style None values
+          jsonString = jsonString.replace(/: None/g, ': null');
+          jsonString = jsonString.replace(/: True/g, ': true');
+          jsonString = jsonString.replace(/: False/g, ': false');
+          
+          const tokenData = JSON.parse(jsonString);
           if (tokenData.data && tokenData.data.redirect_url && tokenData.data.redirect_url.web) {
             return tokenData.data.redirect_url.web;
           }
@@ -375,6 +383,32 @@ const Signin = () => {
     return CONSOLE_URL;
   };
 
+  const extractTokenFromRedirectUrl = (redirect_url: string) => {
+    if (!redirect_url || typeof redirect_url !== 'string') return null;
+    
+    const match = redirect_url.match(/\?token=(.+)$/);
+    if (match) {
+      try {
+        // The JSON uses single quotes, so we need to fix it before parsing
+        let jsonString = decodeURIComponent(match[1]);
+        // Replace single quotes with double quotes for valid JSON
+        jsonString = jsonString.replace(/'/g, '"');
+        // Handle Python-style None values
+        jsonString = jsonString.replace(/: None/g, ': null');
+        jsonString = jsonString.replace(/: True/g, ': true');
+        jsonString = jsonString.replace(/: False/g, ': false');
+        
+        const tokenData = JSON.parse(jsonString);
+        if (tokenData.data && tokenData.data.access_token) {
+          return tokenData.data.access_token;
+        }
+      } catch (e) {
+        console.warn('Failed to extract token from redirect URL:', e);
+      }
+    }
+    return null;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
@@ -389,24 +423,11 @@ const Signin = () => {
       // The API returns: { message: "Login successful", user: {...}, redirect_url: "..." }
       // Check for success based on the presence of message and user
       if (data.message && data.message.includes('successful') && data.user) {
-        // Extract user and token info
+        // Extract user info
         const user = data.user;
         
         // Try to extract access_token from the redirect_url if it contains embedded JSON
-        let access_token = null;
-        if (data.redirect_url && typeof data.redirect_url === 'string') {
-          const match = data.redirect_url.match(/\?token=(.+)$/);
-          if (match) {
-            try {
-              const tokenData = JSON.parse(decodeURIComponent(match[1]));
-              if (tokenData.data && tokenData.data.access_token) {
-                access_token = tokenData.data.access_token;
-              }
-            } catch (e) {
-              console.warn('Failed to extract token from redirect URL:', e);
-            }
-          }
-        }
+        let access_token = extractTokenFromRedirectUrl(data.redirect_url);
         
         // If we couldn't extract token, try to get it from data directly
         if (!access_token && data.access_token) {
@@ -546,24 +567,11 @@ const Signin = () => {
       
       // Handle the actual API response structure for Google auth
       if (data.message && data.message.includes('successful') && data.user) {
-        // Extract user and token info
+        // Extract user info
         const user = data.user;
         
         // Try to extract access_token from the redirect_url if it contains embedded JSON
-        let access_token = null;
-        if (data.redirect_url && typeof data.redirect_url === 'string') {
-          const match = data.redirect_url.match(/\?token=(.+)$/);
-          if (match) {
-            try {
-              const tokenData = JSON.parse(decodeURIComponent(match[1]));
-              if (tokenData.data && tokenData.data.access_token) {
-                access_token = tokenData.data.access_token;
-              }
-            } catch (e) {
-              console.warn('Failed to extract token from Google auth redirect URL:', e);
-            }
-          }
-        }
+        let access_token = extractTokenFromRedirectUrl(data.redirect_url);
         
         // If we couldn't extract token, try to get it from data directly
         if (!access_token && data.access_token) {
