@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, AlertCircle, Loader2, Shield, Check, Mail, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext'; // Import useAuth from AuthContext
 
 // React Icons for Email and Password
 const MailIcon = ({ className }) => (
@@ -115,6 +116,7 @@ const Signin = () => {
   const [resendCooldown, setResendCooldown] = useState(0);
   const [verificationAttempts, setVerificationAttempts] = useState(0);
   const navigate = useNavigate();
+  const { login } = useAuth(); // Use AuthContext for login
 
   useEffect(() => {
     if (resendCooldown > 0) {
@@ -149,6 +151,7 @@ const Signin = () => {
 
   const handleInputChange = (field) => (e) => {
     setFormData({ ...formData, [field]: e.target.value });
+    setErrors((prev) => ({ ...prev, [field]: null }));
   };
 
   const validateForm = () => {
@@ -172,7 +175,7 @@ const Signin = () => {
     if (!validateForm()) return;
     setIsLoading(true);
     setErrors({});
-    
+
     try {
       const response = await fetch(`${BASE_URL}/customer/auth/login`, {
         method: 'POST',
@@ -180,32 +183,35 @@ const Signin = () => {
         credentials: 'include',
         body: JSON.stringify({ email: formData.email, password: formData.password }),
       });
-      
+
       const data = await response.json();
       console.log('Signin: Login response:', data);
-      
+
       if (!data.success) {
-        if (data.error.code === 'EMAIL_NOT_VERIFIED') {
-          await handleResendVerification();
-          setCurrentStep('verify');
-          setErrors({ 
-            info: 'Please verify your email address. We\'ve sent a verification code to your email.' 
-          });
+        if (data.error && data.error.code === 'EMAIL_NOT_VERIFIED') {
+          const resendSuccess = await handleResendVerification();
+          if (resendSuccess) {
+            setCurrentStep('verify');
+            setErrors({
+              info: 'Please verify your email address. We\'ve sent a verification code to your email.',
+            });
+          } else {
+            setErrors({ api: 'Failed to send verification code. Please try again.' });
+          }
           return;
         }
-        throw new Error(data.error.detail || 'Sign-in failed');
+        throw new Error(data.error?.detail || 'Sign-in failed');
       }
-      
-      const { access_token, user } = data.data;
-      localStorage.setItem('access_token', access_token);
-      sessionStorage.setItem('access_token', access_token);
-      localStorage.setItem('user', JSON.stringify(user));
-      sessionStorage.setItem('user', JSON.stringify(user));
-      window.location.href = data.data.redirect_url.web;
-      
+
+      const { access_token, user, redirect_url } = data.data;
+      login(access_token, user); // Use AuthContext login
+      // Ensure redirect_url.web is used correctly
+      const redirectUrl = typeof redirect_url === 'string' ? redirect_url : redirect_url.web;
+      window.location.href = redirectUrl.replace(/['"]+/g, ''); // Clean any quotes from URL
+
     } catch (error) {
       console.error('Signin: Login error:', error);
-      setErrors({ api: error.message });
+      setErrors({ api: error.message || 'An unexpected error occurred' });
     } finally {
       setIsLoading(false);
     }
@@ -214,15 +220,15 @@ const Signin = () => {
   const handleVerifyOTP = async (e) => {
     e.preventDefault();
     const otpString = otp.join('');
-    
+
     if (otpString.length !== 6) {
       setErrors({ otp: 'Please enter the complete 6-digit OTP' });
       return;
     }
-    
+
     setIsLoading(true);
     setErrors({});
-    
+
     try {
       const response = await fetch(`${BASE_URL}/customer/auth/verify-email`, {
         method: 'POST',
@@ -230,25 +236,22 @@ const Signin = () => {
         credentials: 'include',
         body: JSON.stringify({ email: formData.email, otp: otpString }),
       });
-      
+
       const data = await response.json();
       console.log('Signin: OTP verify response:', data);
-      
+
       if (!data.success) {
-        setVerificationAttempts(prev => prev + 1);
-        throw new Error(data.error.detail || 'Invalid OTP');
+        setVerificationAttempts((prev) => prev + 1);
+        throw new Error(data.error?.detail || 'Invalid OTP');
       }
-      
+
       const { access_token, user } = data.data;
-      localStorage.setItem('access_token', access_token);
-      sessionStorage.setItem('access_token', access_token);
-      localStorage.setItem('user', JSON.stringify(user));
-      sessionStorage.setItem('user', JSON.stringify(user));
+      login(access_token, user); // Use AuthContext login
       window.location.href = 'https://console.digikenya.co.ke';
-      
+
     } catch (error) {
       console.error('Signin: OTP verify error:', error);
-      setErrors({ otp: error.message });
+      setErrors({ otp: error.message || 'An unexpected error occurred' });
     } finally {
       setIsLoading(false);
     }
@@ -264,10 +267,7 @@ const Signin = () => {
       });
       const data = await response.json();
       console.log('Signin: Resend verification response:', data);
-      if (!data.success) {
-        return false;
-      }
-      return true;
+      return data.success;
     } catch (error) {
       console.error('Signin: Resend verification error:', error);
       return false;
@@ -276,12 +276,12 @@ const Signin = () => {
 
   const handleResendOTP = async () => {
     if (resendCooldown > 0) return;
-    
+
     setIsLoading(true);
     setErrors({});
-    
+
     const success = await handleResendVerification();
-    
+
     if (success) {
       setResendCooldown(60);
       setOtp(['', '', '', '', '', '']);
@@ -290,7 +290,7 @@ const Signin = () => {
     } else {
       setErrors({ api: 'Failed to resend verification code. Please try again.' });
     }
-    
+
     setIsLoading(false);
   };
 
@@ -307,17 +307,16 @@ const Signin = () => {
       const data = await res.json();
       console.log('Signin: Google auth response:', data);
       if (!data.success) {
-        throw new Error(data.error.detail || 'Google authentication failed');
+        throw new Error(data.error?.detail || 'Google authentication failed');
       }
-      const { access_token, user } = data.data;
-      localStorage.setItem('access_token', access_token);
-      sessionStorage.setItem('access_token', access_token);
-      localStorage.setItem('user', JSON.stringify(user));
-      sessionStorage.setItem('user', JSON.stringify(user));
-      window.location.href = data.data.redirect_url.web;
+      const { access_token, user, redirect_url } = data.data;
+      login(access_token, user); // Use AuthContext login
+      // Ensure redirect_url.web is used correctly
+      const redirectUrl = typeof redirect_url === 'string' ? redirect_url : redirect_url.web;
+      window.location.href = redirectUrl.replace(/['"]+/g, ''); // Clean any quotes from URL
     } catch (error) {
       console.error('Signin: Google auth error:', error);
-      setErrors({ api: error.message });
+      setErrors({ api: error.message || 'An unexpected error occurred' });
     } finally {
       setIsLoading(false);
     }
@@ -339,7 +338,7 @@ const Signin = () => {
               <h2 className="text-2xl font-bold text-gray-900">Welcome back</h2>
               <p className="text-gray-600 text-sm">Sign in to your account to continue</p>
             </div>
-            
+
             {errors.api && (
               <div className="flex items-center space-x-1 text-red-600 text-sm bg-red-50 p-3 rounded-lg">
                 <AlertCircle className="h-4 w-4 flex-shrink-0" />
@@ -355,7 +354,7 @@ const Signin = () => {
             )}
 
             <div id="google-signin-button" className="w-full"></div>
-            
+
             <div className="relative my-4">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-gray-200" />
@@ -364,7 +363,7 @@ const Signin = () => {
                 <span className="px-4 bg-gray-50 text-gray-500">or continue with email</span>
               </div>
             </div>
-            
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <InputField
                 id="signin-email"
@@ -400,7 +399,7 @@ const Signin = () => {
                 {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Sign In'}
               </button>
             </form>
-            
+
             <div className="text-center">
               <p className="text-gray-600 text-sm">
                 Don't have an account?{' '}
@@ -415,7 +414,7 @@ const Signin = () => {
             </div>
           </div>
         </div>
-        
+
         <div className="hidden lg:flex flex-1 bg-gradient-to-br from-red-600 to-red-800 relative overflow-hidden">
           <div className="relative z-10 flex items-center justify-center p-8 text-white">
             <div className="text-center space-y-6 max-w-md">
@@ -465,7 +464,7 @@ const Signin = () => {
               </svg>
               <span>Back to sign in</span>
             </button>
-            
+
             <div className="flex items-center justify-center space-x-3 mb-4">
               <KenicLogo />
               <div>
@@ -529,7 +528,7 @@ const Signin = () => {
                 </button>
               )}
             </div>
-            
+
             {verificationAttempts > 0 && verificationAttempts < 5 && (
               <div className="text-xs text-orange-600 bg-orange-50 p-2 rounded">
                 {5 - verificationAttempts} attempts remaining
@@ -538,7 +537,7 @@ const Signin = () => {
           </div>
         </div>
       </div>
-      
+
       <div className="hidden lg:flex flex-1 bg-gradient-to-br from-red-600 to-red-800 relative overflow-hidden">
         <div className="relative z-10 flex items-center justify-center p-8 text-white">
           <div className="text-center space-y-6 max-w-md">
