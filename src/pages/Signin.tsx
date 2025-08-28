@@ -343,72 +343,6 @@ const Signin = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const getRedirectUrl = (redirect_url: any) => {
-    if (!redirect_url) return CONSOLE_URL;
-    
-    // If redirect_url is a string that looks like it contains embedded JSON
-    if (typeof redirect_url === 'string') {
-      // Check if it contains embedded JSON (starts with a URL but has JSON after)
-      const match = redirect_url.match(/^(https?:\/\/[^?]+)\?token=(.+)$/);
-      if (match) {
-        try {
-          // The JSON uses single quotes, so we need to fix it before parsing
-          let jsonString = decodeURIComponent(match[2]);
-          // Replace single quotes with double quotes for valid JSON
-          jsonString = jsonString.replace(/'/g, '"');
-          // Handle Python-style None values
-          jsonString = jsonString.replace(/: None/g, ': null');
-          jsonString = jsonString.replace(/: True/g, ': true');
-          jsonString = jsonString.replace(/: False/g, ': false');
-          
-          const tokenData = JSON.parse(jsonString);
-          if (tokenData.data && tokenData.data.redirect_url && tokenData.data.redirect_url.web) {
-            return tokenData.data.redirect_url.web;
-          }
-        } catch (e) {
-          console.warn('Failed to parse embedded JSON in redirect URL:', e);
-        }
-        // Return the base URL without the token parameter
-        return match[1];
-      }
-      // Clean any quotes and return
-      return redirect_url.replace(/['"]+/g, '');
-    }
-    
-    // If it's an object with web property
-    if (redirect_url.web) {
-      return redirect_url.web.replace(/['"]+/g, '');
-    }
-    
-    return CONSOLE_URL;
-  };
-
-  const extractTokenFromRedirectUrl = (redirect_url: string) => {
-    if (!redirect_url || typeof redirect_url !== 'string') return null;
-    
-    const match = redirect_url.match(/\?token=(.+)$/);
-    if (match) {
-      try {
-        // The JSON uses single quotes, so we need to fix it before parsing
-        let jsonString = decodeURIComponent(match[1]);
-        // Replace single quotes with double quotes for valid JSON
-        jsonString = jsonString.replace(/'/g, '"');
-        // Handle Python-style None values
-        jsonString = jsonString.replace(/: None/g, ': null');
-        jsonString = jsonString.replace(/: True/g, ': true');
-        jsonString = jsonString.replace(/: False/g, ': false');
-        
-        const tokenData = JSON.parse(jsonString);
-        if (tokenData.data && tokenData.data.access_token) {
-          return tokenData.data.access_token;
-        }
-      } catch (e) {
-        console.warn('Failed to extract token from redirect URL:', e);
-      }
-    }
-    return null;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
@@ -417,74 +351,55 @@ const Signin = () => {
     setErrors({});
 
     try {
-      const data = await apiService.login(formData.email.trim(), formData.password);
+      const response = await apiService.login(formData.email.trim(), formData.password);
 
-      // Handle the actual API response structure
-      // The API returns: { message: "Login successful", user: {...}, redirect_url: "..." }
-      // Check for success based on the presence of message and user
-      if (data.message && data.message.includes('successful') && data.user) {
-        // Extract user info
-        const user = data.user;
+      console.log('Login response:', response);
+
+      // Handle the new API response structure
+      if (response.success && response.data) {
+        const { access_token, user, redirect_url } = response.data;
         
-        // Try to extract access_token from the redirect_url if it contains embedded JSON
-        let access_token = extractTokenFromRedirectUrl(data.redirect_url);
-        
-        // If we couldn't extract token, try to get it from data directly
-        if (!access_token && data.access_token) {
-          access_token = data.access_token;
-        }
-        
-        // If we still don't have a token, this might be an email verification case
-        if (!access_token) {
-          // Check if email needs verification
-          if (user && !user.is_email_verified) {
-            const resendSuccess = await handleResendVerification();
-            if (resendSuccess) {
-              setCurrentStep('verify');
-              setErrors({
-                info: 'Please verify your email address. We\'ve sent a verification code to your email.',
-              });
-            } else {
-              setErrors({ api: 'Failed to send verification code. Please try again.' });
-            }
-            return;
-          } else {
-            throw new ApiError('No access token received from server');
-          }
-        }
-        
-        // Login successful with token
-        login(access_token, user);
-        
-        // Get clean redirect URL
-        const redirectUrl = getRedirectUrl(data.redirect_url);
-        
-        // Add the token as a URL parameter for the console to pick up
-        const redirectWithToken = `${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(access_token)}`;
-        
-        console.log('Redirecting to:', redirectWithToken);
-        window.location.href = redirectWithToken;
-        
-      } else if (data.error && data.error.code === 'EMAIL_NOT_VERIFIED') {
-        const resendSuccess = await handleResendVerification();
-        if (resendSuccess) {
-          setCurrentStep('verify');
-          setErrors({
-            info: 'Please verify your email address. We\'ve sent a verification code to your email.',
-          });
+        if (access_token && user) {
+          // Login successful
+          login(access_token, user);
+          
+          // Use the redirect_url from response or fallback to console URL
+          const finalRedirectUrl = redirect_url || `${CONSOLE_URL}?token=${encodeURIComponent(access_token)}`;
+          
+          console.log('Redirecting to:', finalRedirectUrl);
+          window.location.href = finalRedirectUrl;
         } else {
-          setErrors({ api: 'Failed to send verification code. Please try again.' });
+          throw new ApiError('Invalid response format from server');
         }
-        return;
       } else {
-        // Handle other error cases
-        throw new ApiError(data.error?.detail || data.message || 'Sign-in failed');
+        // Handle error cases - the updated API should throw errors, but just in case
+        throw new ApiError(response.message || 'Login failed');
       }
 
     } catch (error) {
       console.error('Signin: Login error:', error);
       if (error instanceof ApiError) {
-        setErrors({ api: error.message });
+        // Handle specific error codes
+        if (error.code === 'EMAIL_NOT_VERIFIED') {
+          const resendSuccess = await handleResendVerification();
+          if (resendSuccess) {
+            setCurrentStep('verify');
+            setErrors({
+              info: 'Please verify your email address. We\'ve sent a verification code to your email.',
+            });
+          } else {
+            setErrors({ api: 'Failed to send verification code. Please try again.' });
+          }
+          return;
+        } else if (error.code === 'ACCOUNT_LOCKED') {
+          setErrors({ api: 'Account is temporarily locked due to too many failed login attempts. Please try again later.' });
+        } else if (error.code === 'ACCOUNT_SUSPENDED') {
+          setErrors({ api: 'Your account has been suspended. Please contact support.' });
+        } else if (error.code === 'INVALID_CREDENTIALS') {
+          setErrors({ api: 'Invalid email or password. Please check your credentials and try again.' });
+        } else {
+          setErrors({ api: error.message });
+        }
       } else {
         setErrors({ api: 'An unexpected error occurred. Please try again.' });
       }
@@ -511,37 +426,32 @@ const Signin = () => {
     setErrors({});
 
     try {
-      const data = await apiService.verifyEmail(formData.email.trim(), otpString);
+      const response = await apiService.verifyEmail(formData.email.trim(), otpString);
 
-      // Handle successful verification
-      if (data.message && data.message.includes('successful') && data.user) {
-        const user = data.user;
-        let access_token = extractTokenFromRedirectUrl(data.redirect_url) || data.access_token;
+      console.log('Verify email response:', response);
+
+      // Handle the new API response structure
+      if (response.success && response.data) {
+        const { access_token, user, redirect_url } = response.data;
         
-        if (!access_token) {
-          throw new ApiError('No access token received after verification');
+        if (access_token && user) {
+          login(access_token, user);
+          
+          const finalRedirectUrl = redirect_url || `${CONSOLE_URL}?token=${encodeURIComponent(access_token)}`;
+          window.location.href = finalRedirectUrl;
+        } else {
+          throw new ApiError('Invalid response format from server');
         }
-
-        login(access_token, user);
-        
-        // Add the token as a URL parameter for the console to pick up
-        const redirectWithToken = `${CONSOLE_URL}${CONSOLE_URL.includes('?') ? '&' : '?'}token=${encodeURIComponent(access_token)}`;
-        window.location.href = redirectWithToken;
-      } else if (data.success && data.data) {
-        // Handle standard success response format
-        const { access_token, user } = data.data;
-        login(access_token, user);
-        
-        const redirectWithToken = `${CONSOLE_URL}${CONSOLE_URL.includes('?') ? '&' : '?'}token=${encodeURIComponent(access_token)}`;
-        window.location.href = redirectWithToken;
       } else {
-        setVerificationAttempts((prev) => prev + 1);
-        throw new ApiError(data.error?.detail || 'Invalid verification code');
+        throw new ApiError(response.message || 'Email verification failed');
       }
 
     } catch (error) {
       console.error('Signin: OTP verify error:', error);
       if (error instanceof ApiError) {
+        if (error.code === 'INVALID_OTP') {
+          setVerificationAttempts((prev) => prev + 1);
+        }
         setErrors({ otp: error.message });
       } else {
         setErrors({ otp: 'An unexpected error occurred. Please try again.' });
@@ -553,8 +463,8 @@ const Signin = () => {
 
   const handleResendVerification = async () => {
     try {
-      const data = await apiService.resendVerification(formData.email.trim());
-      return data.success;
+      const response = await apiService.resendVerification(formData.email.trim());
+      return response.success;
     } catch (error) {
       console.error('Signin: Resend verification error:', error);
       return false;
@@ -586,36 +496,26 @@ const Signin = () => {
     setErrors({});
     
     try {
-      const data = await apiService.googleAuth(response.credential);
+      const apiResponse = await apiService.googleAuth(response.credential);
       
-      // Handle the actual API response structure for Google auth
-      if (data.message && data.message.includes('successful') && data.user) {
-        // Extract user info
-        const user = data.user;
+      console.log('Google auth response:', apiResponse);
+
+      // Handle the new API response structure for Google auth
+      if (apiResponse.success && apiResponse.data) {
+        const { access_token, user, redirect_url } = apiResponse.data;
         
-        // Try to extract access_token from the redirect_url if it contains embedded JSON
-        let access_token = extractTokenFromRedirectUrl(data.redirect_url);
-        
-        // If we couldn't extract token, try to get it from data directly
-        if (!access_token && data.access_token) {
-          access_token = data.access_token;
+        if (access_token && user) {
+          login(access_token, user);
+          
+          const finalRedirectUrl = redirect_url || `${CONSOLE_URL}?token=${encodeURIComponent(access_token)}`;
+          
+          console.log('Google auth redirecting to:', finalRedirectUrl);
+          window.location.href = finalRedirectUrl;
+        } else {
+          throw new ApiError('Invalid response format from Google authentication');
         }
-        
-        if (!access_token) {
-          throw new ApiError('No access token received from Google authentication');
-        }
-        
-        login(access_token, user);
-        
-        const redirectUrl = getRedirectUrl(data.redirect_url);
-        
-        // Add the token as a URL parameter for the console to pick up
-        const redirectWithToken = `${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(access_token)}`;
-        
-        console.log('Google auth redirecting to:', redirectWithToken);
-        window.location.href = redirectWithToken;
       } else {
-        throw new ApiError(data.error?.detail || 'Google authentication failed');
+        throw new ApiError(apiResponse.message || 'Google authentication failed');
       }
     } catch (error) {
       console.error('Signin: Google auth error:', error);
