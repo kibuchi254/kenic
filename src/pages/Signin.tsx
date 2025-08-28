@@ -14,12 +14,7 @@ const API_ENDPOINTS = {
   GOOGLE_AUTH: '/customer/auth/google-auth',
   VERIFY_EMAIL: '/customer/auth/verify-email',
   RESEND_VERIFICATION: '/customer/auth/resend-verification',
-};
-
-// Storage keys
-const STORAGE_KEYS = {
-  ACCESS_TOKEN: 'access_token',
-  USER: 'user',
+  EXCHANGE_CODE: '/customer/auth/exchange-code',
 };
 
 // API Error class
@@ -352,34 +347,25 @@ const Signin = () => {
 
     try {
       const response = await apiService.login(formData.email.trim(), formData.password);
-
       console.log('Login response:', response);
 
-      // Handle the new API response structure
       if (response.success && response.data) {
-        const { access_token, user, redirect_url } = response.data;
+        const { redirect_url } = response.data;
         
-        if (access_token && user) {
-          // Login successful
-          login(access_token, user);
-          
-          // Use the redirect_url from response or fallback to console URL
-          const finalRedirectUrl = redirect_url || `${CONSOLE_URL}?token=${encodeURIComponent(access_token)}`;
-          
-          console.log('Redirecting to:', finalRedirectUrl);
-          window.location.href = finalRedirectUrl;
+        if (redirect_url) {
+          // Redirect to the secure callback URL with temporary code
+          console.log('Redirecting to:', redirect_url);
+          window.location.href = redirect_url;
         } else {
-          throw new ApiError('Invalid response format from server');
+          throw new ApiError('No redirect URL received from server');
         }
       } else {
-        // Handle error cases - the updated API should throw errors, but just in case
         throw new ApiError(response.message || 'Login failed');
       }
 
     } catch (error) {
       console.error('Signin: Login error:', error);
       if (error instanceof ApiError) {
-        // Handle specific error codes
         if (error.code === 'EMAIL_NOT_VERIFIED') {
           const resendSuccess = await handleResendVerification();
           if (resendSuccess) {
@@ -427,20 +413,17 @@ const Signin = () => {
 
     try {
       const response = await apiService.verifyEmail(formData.email.trim(), otpString);
-
       console.log('Verify email response:', response);
 
-      // Handle the new API response structure
       if (response.success && response.data) {
-        const { access_token, user, redirect_url } = response.data;
+        const { redirect_url } = response.data;
         
-        if (access_token && user) {
-          login(access_token, user);
-          
-          const finalRedirectUrl = redirect_url || `${CONSOLE_URL}?token=${encodeURIComponent(access_token)}`;
-          window.location.href = finalRedirectUrl;
+        if (redirect_url) {
+          // Redirect to the secure callback URL with temporary code
+          console.log('Redirecting to:', redirect_url);
+          window.location.href = redirect_url;
         } else {
-          throw new ApiError('Invalid response format from server');
+          throw new ApiError('No redirect URL received after verification');
         }
       } else {
         throw new ApiError(response.message || 'Email verification failed');
@@ -497,22 +480,17 @@ const Signin = () => {
     
     try {
       const apiResponse = await apiService.googleAuth(response.credential);
-      
       console.log('Google auth response:', apiResponse);
 
-      // Handle the new API response structure for Google auth
       if (apiResponse.success && apiResponse.data) {
-        const { access_token, user, redirect_url } = apiResponse.data;
+        const { redirect_url } = apiResponse.data;
         
-        if (access_token && user) {
-          login(access_token, user);
-          
-          const finalRedirectUrl = redirect_url || `${CONSOLE_URL}?token=${encodeURIComponent(access_token)}`;
-          
-          console.log('Google auth redirecting to:', finalRedirectUrl);
-          window.location.href = finalRedirectUrl;
+        if (redirect_url) {
+          // Redirect to the secure callback URL with temporary code
+          console.log('Google auth redirecting to:', redirect_url);
+          window.location.href = redirect_url;
         } else {
-          throw new ApiError('Invalid response format from Google authentication');
+          throw new ApiError('No redirect URL received from Google authentication');
         }
       } else {
         throw new ApiError(apiResponse.message || 'Google authentication failed');
@@ -802,7 +780,7 @@ const Signin = () => {
               </div>
             </div>
             <div className="text-sm text-red-100 opacity-90">
-              <p>💡 Tip: Check your spam folder if you don't see the email</p>
+              <p>Tip: Check your spam folder if you don't see the email</p>
             </div>
           </div>
         </div>
