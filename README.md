@@ -16,31 +16,9 @@ Our platform is more than just domain registration — we are creating a complet
 Our mission is to make domain registration and management simpler, faster, and more accessible for everyone.
 
 🔧 Tech Stack
-Web App
-
-Vite
-
-TypeScript
-
-React
-
-shadcn-ui
-
-Tailwind CSS
-
-Android App
-
-Kotlin / Java (Android Studio)
-
-REST API Integration with backend
-
-Material Design UI
-
-⚙️ Development Setup
-Web App
-# Step 1: Clone the repository
-git clone <YOUR_GIT_URL>
-
+     Web App: React+Vite,Shadcn-ui, Tailwind CSS ,Typescript
+     Android App: Flutter
+     REST API Integration with (Fat Api) for backend
 # Step 2: Navigate into the project directory
 cd <YOUR_PROJECT_NAME>
 
@@ -60,24 +38,6 @@ Run the app on an emulator or connected device.
 
 🚀 Deployment
 Web App
-
-You can deploy the web app on any modern hosting provider such as:
-
-Vercel
-
-Netlify
-
-AWS Amplify
-
-DigitalOcean Apps
-
-Android App
-
-Generate a signed APK or App Bundle in Android Studio and publish on:
-
-Google Play Store
-
-Or distribute directly via APK.
 
 🌐 Roadmap
 
