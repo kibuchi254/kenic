@@ -10,6 +10,7 @@ import Signin from "./pages/Signin";
 import NotFound from "./pages/NotFound";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import Signup from "./pages/Signup";
+import Registrars from "./pages/RegistrarsSelectionPage"; // Import the Registrars component
 
 const queryClient = new QueryClient();
 
@@ -23,6 +24,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/domain-checkout" element={<DomainCheckout />} />
+            <Route path="/registrars" element={<Registrars />} /> {/* Add this route */}
             <Route path="/signin" element={<Signin />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/signup" element={<Signup />} />
