@@ -80,7 +80,11 @@ const apiService = {
     });
   },
 
-  async exchangeCode(code: string) {
+  async exchangeCode(code: string, method: 'POST' | 'GET' = 'POST') {
+    if (method === 'GET') {
+      const url = `${BASE_URL}${API_ENDPOINTS.EXCHANGE_CODE}?code=${encodeURIComponent(code)}`;
+      return this.makeRequest(url, { method: 'GET' });
+    }
     return this.makeRequest(API_ENDPOINTS.EXCHANGE_CODE, {
       method: 'POST',
       body: JSON.stringify({ code }),
@@ -598,21 +602,44 @@ const Signin = () => {
             const url = new URL(redirect_url);
             const code = url.searchParams.get('code');
             if (code) {
-              console.log('Signin: Exchanging code for token');
-              const tokenResponse = await apiService.exchangeCode(code);
-              if (tokenResponse.success && tokenResponse.data?.token) {
-                token = tokenResponse.data.token;
-                user = tokenResponse.data.user || user; // Use user from exchange if provided
-                console.log('Signin: Token obtained:', token.substring(0, 20) + '...');
-              } else {
-                throw new ApiError(tokenResponse.message || 'Failed to exchange code for token');
+              console.log('Signin: Exchanging code for token with POST');
+              try {
+                const tokenResponse = await apiService.exchangeCode(code, 'POST');
+                if (tokenResponse.success && tokenResponse.data?.token) {
+                  token = tokenResponse.data.token;
+                  user = tokenResponse.data.user || user;
+                  console.log('Signin: Token obtained:', token.substring(0, 20) + '...');
+                } else {
+                  throw new ApiError(tokenResponse.message || 'Failed to exchange code for token');
+                }
+              } catch (postError: any) {
+                if (postError.statusCode === 405) {
+                  console.log('Signin: POST failed, trying GET');
+                  try {
+                    const tokenResponse = await apiService.exchangeCode(code, 'GET');
+                    if (tokenResponse.success && tokenResponse.data?.token) {
+                      token = tokenResponse.data.token;
+                      user = tokenResponse.data.user || user;
+                      console.log('Signin: Token obtained:', token.substring(0, 20) + '...');
+                    } else {
+                      throw new ApiError(tokenResponse.message || 'Failed to exchange code for token with GET');
+                    }
+                  } catch (getError) {
+                    console.error('Signin: GET code exchange error:', getError);
+                    console.log('Signin: Falling back to redirect to', redirect_url);
+                    window.location.href = redirect_url;
+                    return;
+                  }
+                } else {
+                  throw postError;
+                }
               }
             } else {
               throw new ApiError('No authorization code in redirect URL');
             }
           } catch (error) {
             console.error('Signin: Code exchange error:', error);
-            setErrors({ google: 'Failed to authenticate with Google. Please try again.' });
+            setErrors({ google: 'Failed to authenticate with Google. Please try again or use email sign-in.' });
             setIsLoading(false);
             return;
           }
