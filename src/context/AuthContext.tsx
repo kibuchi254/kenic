@@ -27,7 +27,6 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
 const BASE_URL = 'https://api.digikenya.co.ke';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -36,109 +35,111 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  const getCookie = useCallback((name: string): string | undefined => {
-    const value = `; ${document.cookie}`;
-    const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) {
-      const cookieValue = parts.pop()?.split(';').shift();
-      if (cookieValue && cookieValue !== 'undefined' && cookieValue !== 'null') {
-        console.log(`AuthProvider: getCookie ${name} found:`, cookieValue.substring(0, 20) + '...');
-        return cookieValue;
+  const getToken = useCallback((): string | undefined => {
+    // Check localStorage first (our primary storage)
+    const localToken = localStorage.getItem('session_token');
+    
+    // Enhanced cookie checking with multiple methods
+    const getCookieToken = (): string | undefined => {
+      // Method 1: Standard cookie parsing
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; session_token=`);
+      if (parts.length === 2) {
+        const cookieValue = parts.pop()?.split(';').shift();
+        if (cookieValue) return cookieValue;
       }
+      
+      // Method 2: Alternative cookie parsing for access_token
+      const altParts = value.split(`; access_token=`);
+      if (altParts.length === 2) {
+        const altCookieValue = altParts.pop()?.split(';').shift();
+        if (altCookieValue) return altCookieValue;
+      }
+      
+      // Method 3: Manual cookie search (sometimes more reliable)
+      const cookies = document.cookie.split(';');
+      for (let cookie of cookies) {
+        const trimmedCookie = cookie.trim();
+        if (trimmedCookie.startsWith('session_token=')) {
+          return trimmedCookie.substring('session_token='.length);
+        }
+        if (trimmedCookie.startsWith('access_token=')) {
+          return trimmedCookie.substring('access_token='.length);
+        }
+      }
+      
+      return undefined;
+    };
+    
+    const cookieToken = getCookieToken();
+    const finalToken = localToken || cookieToken;
+    
+    console.log('ROOT TOKEN CHECK:', {
+      localStorage: localToken ? 'EXISTS' : 'MISSING',
+      cookie: cookieToken ? 'EXISTS' : 'MISSING',
+      final: finalToken ? 'FOUND' : 'NOT_FOUND'
+    });
+    
+    // If we found a cookie token but no localStorage token, sync them
+    if (cookieToken && !localToken) {
+      localStorage.setItem('session_token', cookieToken);
+      console.log('ROOT TOKEN SYNC: Synced cookie token to localStorage');
     }
-    console.log(`AuthProvider: getCookie ${name} not found or invalid`);
-    return undefined;
+    
+    return finalToken;
   }, []);
-
-  const getToken = useCallback((): string | null => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlToken = urlParams.get('token');
-    if (urlToken) {
-      console.log('AuthProvider: Token found in URL');
-      return urlToken;
-    }
-
-    if (token) {
-      console.log('AuthProvider: Token found in memory');
-      return token;
-    }
-
-    const localToken = localStorage.getItem('access_token') || localStorage.getItem('session_token');
-    if (localToken && localToken !== 'undefined' && localToken !== 'null') {
-      console.log('AuthProvider: Token found in localStorage');
-      return localToken;
-    }
-
-    const sessionToken = sessionStorage.getItem('access_token') || sessionStorage.getItem('session_token');
-    if (sessionToken && sessionToken !== 'undefined' && sessionToken !== 'null') {
-      console.log('AuthProvider: Token found in sessionStorage');
-      return sessionToken;
-    }
-
-    const cookieToken = getCookie('session_token') || getCookie('access_token');
-    if (cookieToken) {
-      console.log('AuthProvider: Token found in cookies');
-      return cookieToken;
-    }
-
-    console.log('AuthProvider: No token found in any source');
-    return null;
-  }, [token, getCookie]);
 
   const getStoredUser = useCallback((): User | null => {
     try {
-      const localUser = localStorage.getItem('user');
+      const localUser = localStorage.getItem('user') || sessionStorage.getItem('user');
       if (localUser && localUser !== 'undefined' && localUser !== 'null') {
         return JSON.parse(localUser);
       }
-
-      const sessionUser = sessionStorage.getItem('user');
-      if (sessionUser && sessionUser !== 'undefined' && sessionUser !== 'null') {
-        return JSON.parse(sessionUser);
-      }
     } catch (error) {
-      console.error('AuthProvider: Error parsing stored user:', error);
+      console.error('ROOT: Error parsing stored user:', error);
     }
     return null;
   }, []);
 
-  const validateToken = useCallback(async (tokenToValidate: string): Promise<{ valid: boolean; user?: User; newToken?: string }> => {
+  const validateWithBackend = useCallback(async (tokenToValidate?: string): Promise<{ token?: string; user?: User } | null> => {
     try {
-      console.log('AuthProvider: Validating token with backend...');
+      console.log('ROOT BACKEND VALIDATION: Attempting to validate session with backend...');
+      
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (tokenToValidate) {
+        headers.Authorization = `Bearer ${tokenToValidate}`;
+      }
+      
       const response = await fetch(`${BASE_URL}/customer/auth/verify-token`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${tokenToValidate}`,
-        },
-        credentials: 'include',
+        headers,
+        credentials: 'include', // This will send cookies
       });
 
-      if (!response.ok) {
-        console.error('AuthProvider: Token validation failed with status:', response.status);
-        return { valid: false };
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data?.user) {
+          console.log('ROOT BACKEND VALIDATION: Success, user found:', data.data.user.email);
+          return {
+            token: data.data.token,
+            user: data.data.user
+          };
+        }
       }
-
-      const data = await response.json();
-      console.log('AuthProvider: Token validation response:', data.success ? 'SUCCESS' : 'FAILED');
-
-      if (data.success && data.data) {
-        return {
-          valid: true,
-          user: data.data.user,
-          newToken: data.data.token,
-        };
-      }
-
-      return { valid: false };
+      
+      console.log('ROOT BACKEND VALIDATION: Failed or no valid session found');
+      return null;
     } catch (error) {
-      console.error('AuthProvider: Token validation error:', error);
-      return { valid: false };
+      console.log('ROOT BACKEND VALIDATION: Error occurred:', error);
+      return null;
     }
   }, []);
 
   const storeAuthData = useCallback((authToken: string | null, userData: User) => {
-    console.log('AuthProvider: Storing auth data for user:', userData.email);
+    console.log('ROOT: Storing auth data for user:', userData.email);
 
     setToken(authToken);
     setUser(userData);
@@ -148,10 +149,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     sessionStorage.setItem('user', JSON.stringify(userData));
 
     if (authToken) {
-      localStorage.setItem('access_token', authToken);
       localStorage.setItem('session_token', authToken);
-      sessionStorage.setItem('access_token', authToken);
-      sessionStorage.setItem('session_token', authToken);
+      console.log('ROOT: Token stored in localStorage');
 
       const expires = new Date();
       expires.setDate(expires.getDate() + 7);
@@ -159,22 +158,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       document.cookie = `access_token=${authToken}; expires=${expires.toUTCString()}; path=/; domain=.digikenya.co.ke; secure; samesite=lax`;
     }
 
-    console.log('AuthProvider: Auth data stored successfully');
+    console.log('ROOT: Auth data stored successfully');
   }, []);
 
   const clearAuthData = useCallback(() => {
-    console.log('AuthProvider: Clearing all auth data');
+    console.log('ROOT: Clearing all auth data');
 
     setToken(null);
     setUser(null);
     setIsAuthenticated(false);
 
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('session_token');
     localStorage.removeItem('user');
-
-    sessionStorage.removeItem('access_token');
-    sessionStorage.removeItem('session_token');
+    localStorage.removeItem('session_token');
     sessionStorage.removeItem('user');
 
     document.cookie = 'session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.digikenya.co.ke';
@@ -182,18 +177,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     document.cookie = 'session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=digikenya.co.ke';
     document.cookie = 'access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=digikenya.co.ke';
 
-    console.log('AuthProvider: Auth data cleared');
+    console.log('ROOT: Auth data cleared');
   }, []);
+
+  // Helper function to wait for token with retries
+  const waitForToken = useCallback(async (maxRetries: number = 5, delayMs: number = 200): Promise<string | undefined> => {
+    for (let i = 0; i < maxRetries; i++) {
+      const token = getToken();
+      if (token) {
+        console.log(`ROOT TOKEN FOUND on attempt ${i + 1}`);
+        return token;
+      }
+      if (i < maxRetries - 1) {
+        console.log(`ROOT TOKEN RETRY ${i + 1}/${maxRetries} - waiting ${delayMs}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+    console.log(`ROOT TOKEN NOT FOUND after ${maxRetries} attempts`);
+    return undefined;
+  }, [getToken]);
 
   const refreshToken = useCallback(async (): Promise<boolean> => {
     const currentToken = getToken();
     if (!currentToken) {
-      console.log('AuthProvider: No token to refresh');
+      console.log('ROOT: No token to refresh');
       return false;
     }
 
     try {
-      console.log('AuthProvider: Attempting token refresh...');
+      console.log('ROOT: Attempting token refresh...');
       const response = await fetch(`${BASE_URL}/customer/auth/refresh-token`, {
         method: 'POST',
         headers: {
@@ -206,61 +218,75 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.data?.token && data.data?.user) {
-          console.log('AuthProvider: Token refreshed successfully');
+          console.log('ROOT: Token refreshed successfully');
           storeAuthData(data.data.token, data.data.user);
           return true;
         }
       }
 
-      console.log('AuthProvider: Token refresh failed');
+      console.log('ROOT: Token refresh failed');
       return false;
     } catch (error) {
-      console.error('AuthProvider: Token refresh error:', error);
+      console.error('ROOT: Token refresh error:', error);
       return false;
     }
   }, [getToken, storeAuthData]);
 
   const login = useCallback(async (newToken: string | null, newUser: User, isCheckoutFlow: boolean = false) => {
-    console.log('AuthProvider: Logging in user:', newUser.email, { isCheckoutFlow });
+    console.log('ROOT LOGIN: User logging in:', newUser.email, { isCheckoutFlow });
+    console.log('ROOT LOGIN: Token provided:', newToken ? 'YES' : 'NO');
 
     if (!newUser) {
-      console.error('AuthProvider: No user data provided for login');
+      console.error('ROOT LOGIN: No user data provided for login');
       throw new Error('User data is missing');
     }
 
-    if (!newToken && !isCheckoutFlow) {
-      console.error('AuthProvider: No token provided for non-checkout login');
-      throw new Error('Authentication token is missing');
-    }
-
     if (newToken && !isCheckoutFlow) {
-      const validation = await validateToken(newToken);
-      if (validation.valid) {
-        storeAuthData(validation.newToken || newToken, validation.user || newUser);
+      // Validate token if provided and not checkout flow
+      const validation = await validateWithBackend(newToken);
+      if (validation?.valid !== false) { // Allow if validation succeeds or fails due to network
+        storeAuthData(validation?.token || newToken, validation?.user || newUser);
       } else {
-        console.error('AuthProvider: Provided token is invalid');
+        console.error('ROOT LOGIN: Provided token is invalid');
         throw new Error('Invalid authentication token');
       }
     } else if (isCheckoutFlow) {
       // For checkout flow, allow login without token if user is verified
       if (newUser.is_email_verified && newUser.account_status === 'active') {
-        console.log('AuthProvider: Bypassing token validation for checkout flow with verified user');
+        console.log('ROOT LOGIN: Bypassing token validation for checkout flow with verified user');
         storeAuthData(newToken, newUser);
       } else {
-        console.error('AuthProvider: User not verified for checkout flow');
+        console.error('ROOT LOGIN: User not verified for checkout flow');
         throw new Error('User is not verified or account is not active');
       }
+    } else {
+      // No token provided, store user data and rely on cookies
+      storeAuthData(newToken, newUser);
     }
 
+    // Clean up URL if token was in URL
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.has('token')) {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
-  }, [storeAuthData, validateToken]);
+
+    // Verify token availability after a short delay
+    setTimeout(() => {
+      const finalToken = getToken();
+      console.log('ROOT LOGIN: Final token verification:', finalToken ? 'SUCCESS' : 'FAILED');
+      
+      if (!finalToken) {
+        console.warn('ROOT LOGIN: No token found after login - this may cause issues on reload');
+      }
+    }, 500);
+  }, [storeAuthData, validateWithBackend, getToken]);
 
   const logout = useCallback(() => {
-    console.log('AuthProvider: Logging out user');
+    console.log('ROOT LOGOUT: User logging out');
 
+    // Only redirect if not already on auth callback page
+    const shouldRedirect = !window.location.pathname.includes('/auth/callback');
+    
     if (token) {
       fetch(`${BASE_URL}/customer/auth/logout`, {
         method: 'POST',
@@ -269,78 +295,128 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           'Content-Type': 'application/json' 
         },
         credentials: 'include',
-      }).catch((error) => console.error('AuthProvider: Logout API error:', error));
+      }).catch((error) => console.error('ROOT LOGOUT: Logout API error:', error));
     }
 
     clearAuthData();
-    window.location.href = '/signin';
+    
+    if (shouldRedirect) {
+      // Add a small delay to ensure cleanup is complete
+      setTimeout(() => {
+        window.location.href = '/signin';
+      }, 100);
+    }
   }, [token, clearAuthData]);
 
   useEffect(() => {
     const initializeAuth = async () => {
-      console.log('AuthProvider: Initializing auth for root domain...');
+      console.log('ROOT RELOAD: Starting auth initialization...');
 
       try {
-        let currentToken = getToken();
-        console.log('AuthProvider: Current token status:', currentToken ? 'FOUND' : 'NOT_FOUND');
-
-        let currentUser = getStoredUser();
-        console.log('AuthProvider: Stored user status:', currentUser ? 'FOUND' : 'NOT_FOUND');
-
-        if (currentToken) {
-          const validation = await validateToken(currentToken);
-          if (validation.valid) {
-            console.log('AuthProvider: Token validation successful');
-            const finalUser = validation.user || currentUser;
-            const finalToken = validation.newToken || currentToken;
-
-            if (finalUser) {
-              storeAuthData(finalToken, finalUser);
-              if (new URLSearchParams(window.location.search).has('token')) {
-                window.history.replaceState({}, document.title, window.location.pathname);
-              }
-            } else {
-              console.warn('AuthProvider: Valid token but no user data');
-              clearAuthData();
+        // Step 1: Check for stored user data
+        const storedUser = getStoredUser();
+        console.log('ROOT RELOAD: Checking stored data...');
+        console.log('  - Stored user:', storedUser ? 'EXISTS' : 'MISSING');
+        
+        // Step 2: If we have stored user data, try to get token with retries
+        let sessionToken: string | undefined;
+        
+        if (storedUser) {
+          // Try to get token with multiple attempts
+          sessionToken = await waitForToken(5, 300);
+          
+          // If still no token, try backend validation as a last resort
+          if (!sessionToken) {
+            console.log('ROOT RELOAD: No token found after retries, trying backend validation...');
+            const backendResult = await validateWithBackend();
+            if (backendResult?.token && backendResult?.user) {
+              sessionToken = backendResult.token;
+              storeAuthData(sessionToken, backendResult.user);
+              console.log('ROOT RELOAD: Backend validation successful, token and user updated');
+              setIsLoading(false);
+              return;
             }
-          } else {
-            console.warn('AuthProvider: Token validation failed');
-            clearAuthData();
           }
-        } else {
-          console.log('AuthProvider: No token found, user not authenticated');
-          clearAuthData();
         }
+
+        // Step 3: If no stored user but we have a token, try to validate with backend
+        if (!storedUser && !sessionToken) {
+          console.log('ROOT RELOAD: No stored user, checking for token...');
+          sessionToken = await waitForToken(3, 200);
+        }
+
+        if (!storedUser && sessionToken) {
+          console.log('ROOT RELOAD: Found token but no stored user, trying backend validation...');
+          const backendResult = await validateWithBackend(sessionToken);
+          if (backendResult?.user) {
+            storeAuthData(sessionToken, backendResult.user);
+            console.log('ROOT RELOAD: User restored from backend validation:', backendResult.user.email);
+            setIsLoading(false);
+            return;
+          }
+        }
+
+        // Step 4: Final validation - need both user data and token
+        if (!storedUser || !sessionToken) {
+          // Instead of clearing immediately, give one more chance with backend validation
+          if (!storedUser && !sessionToken) {
+            console.log('ROOT RELOAD: No stored data and no token - trying final backend validation...');
+            const backendResult = await validateWithBackend();
+            if (backendResult?.token && backendResult?.user) {
+              storeAuthData(backendResult.token, backendResult.user);
+              console.log('ROOT RELOAD: Final backend validation successful');
+              setIsLoading(false);
+              return;
+            }
+          }
+          
+          console.log('ROOT RELOAD: Unable to restore session - clearing auth data');
+          clearAuthData();
+          setIsLoading(false);
+          return;
+        }
+
+        // Step 5: We have both user and token - set auth state
+        console.log('ROOT RELOAD: Valid stored user found:', storedUser.email);
+        
+        // Set auth state
+        setToken(sessionToken);
+        setUser(storedUser);
+        setIsAuthenticated(true);
+        console.log('ROOT RELOAD: User authenticated successfully on reload');
+        
       } catch (error) {
-        console.error('AuthProvider: Auth initialization error:', error);
-        clearAuthData();
+        console.error('ROOT RELOAD: Auth initialization error:', error);
+        // Don't clear auth data on network errors, just set loading to false
+        console.log('ROOT RELOAD: Network error - keeping existing auth state');
       } finally {
         setIsLoading(false);
-        console.log('AuthProvider: Auth initialization complete');
+        console.log('ROOT RELOAD: Auth initialization complete');
       }
     };
 
     initializeAuth();
-  }, [getToken, getStoredUser, validateToken, storeAuthData, clearAuthData]);
+  }, [getStoredUser, waitForToken, validateWithBackend, storeAuthData, clearAuthData]);
 
+  // Token refresh interval effect
   useEffect(() => {
     if (isAuthenticated && !isLoading) {
-      console.log('AuthProvider: Setting up token refresh interval');
+      console.log('ROOT: Setting up token refresh interval');
 
       const interval = setInterval(async () => {
-        console.log('AuthProvider: Periodic token refresh check');
+        console.log('ROOT: Periodic token refresh check');
         const currentToken = getToken();
         if (currentToken) {
           const refreshed = await refreshToken();
           if (!refreshed) {
-            console.warn('AuthProvider: Token refresh failed, logging out');
+            console.warn('ROOT: Token refresh failed, logging out');
             logout();
           }
         }
-      }, 15 * 60 * 1000);
+      }, 15 * 60 * 1000); // 15 minutes
 
       return () => {
-        console.log('AuthProvider: Clearing token refresh interval');
+        console.log('ROOT: Clearing token refresh interval');
         clearInterval(interval);
       };
     }
