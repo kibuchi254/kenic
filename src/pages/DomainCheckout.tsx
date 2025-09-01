@@ -18,7 +18,7 @@ interface CheckoutState {
   returnUrl?: string;
 }
 
-export default function DomainCheckout() {
+const DomainCheckout: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState("mpesa");
   const [formData, setFormData] = useState({
     fullName: "",
@@ -140,7 +140,7 @@ export default function DomainCheckout() {
     }
   };
 
-  const validateForm = () => {
+  const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
     if (!formData.fullName.trim()) newErrors.fullName = 'Full name is required';
     if (!formData.email.trim()) {
@@ -158,14 +158,14 @@ export default function DomainCheckout() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const splitFullName = (fullName: string) => {
+  const splitFullName = (fullName: string): { firstName: string; lastName: string } => {
     const nameParts = fullName.trim().split(' ');
     const firstName = nameParts[0] || '';
     const lastName = nameParts.slice(1).join(' ') || firstName;
     return { firstName, lastName };
   };
 
-  const getAuthToken = () => {
+  const getAuthToken = (): string | null => {
     // Prioritize accessToken, fallback to token
     const authToken = accessToken || token;
     console.log('DomainCheckout: Getting auth token:', {
@@ -176,23 +176,29 @@ export default function DomainCheckout() {
     return authToken;
   };
 
-  const registerDomain = async () => {
-    let authToken = getAuthToken();
+  const debugAuthHeaders = (): void => {
+    const authToken = getAuthToken();
+    const cookies = document.cookie;
     
-    if (!authToken) {
-      console.log('DomainCheckout: No token, attempting refresh');
-      const refreshed = await refreshToken();
-      if (refreshed) {
-        // Get the updated token after refresh
-        authToken = getAuthToken();
+    console.log('Current auth state:', {
+      token: authToken ? authToken.substring(0, 20) + '...' : 'MISSING',
+      cookies: cookies || 'NONE',
+      localStorage: {
+        session_token: localStorage.getItem('session_token') ? 'EXISTS' : 'MISSING',
+        access_token: localStorage.getItem('access_token') ? 'EXISTS' : 'MISSING',
+        user: localStorage.getItem('user') ? 'EXISTS' : 'MISSING'
+      },
+      sessionStorage: {
+        auth_code: sessionStorage.getItem('auth_code') ? 'EXISTS' : 'MISSING'
       }
-      
-      if (!authToken) {
-        console.error('DomainCheckout: No authentication token available after refresh');
-        throw new Error('Authentication token is missing. Please sign in again.');
-      }
-    }
+    });
+  };
 
+  const registerDomain = async (): Promise<any> => {
+    console.log('DomainCheckout: Starting domain registration with fallback auth methods');
+    debugAuthHeaders();
+
+    // Get form data
     const { firstName, lastName } = splitFullName(formData.fullName);
     
     const registrationData = {
@@ -246,73 +252,179 @@ export default function DomainCheckout() {
       }
     };
 
-    console.log('DomainCheckout: Sending domain registration request with token:', authToken ? 'EXISTS' : 'MISSING');
-    console.log('DomainCheckout: Registration data:', JSON.stringify(registrationData, null, 2));
+    console.log('DomainCheckout: Registration data prepared');
 
+    // Method 1: Try with stored tokens
+    const authToken = getAuthToken();
+    if (authToken) {
+      console.log('DomainCheckout: Attempting registration with stored token');
+      try {
+        const response = await fetch(`${BASE_URL}/api/v1/register`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`,
+          },
+          credentials: 'include',
+          body: JSON.stringify(registrationData),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log('DomainCheckout: Registration successful with stored token');
+          return result;
+        } else {
+          console.log('DomainCheckout: Stored token failed, trying cookie-based auth');
+        }
+      } catch (error) {
+        console.log('DomainCheckout: Stored token request failed, trying cookie-based auth');
+      }
+    }
+
+    // Method 2: Try with cookie-based authentication (no Authorization header)
+    console.log('DomainCheckout: Attempting registration with cookie authentication');
     try {
       const response = await fetch(`${BASE_URL}/api/v1/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
+          // No Authorization header - rely on cookies
         },
-        credentials: 'include',
+        credentials: 'include', // This sends cookies
         body: JSON.stringify(registrationData),
       });
 
       const result = await response.json();
-      
-      if (!response.ok) {
-        console.error('DomainCheckout: Registration failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          result: JSON.stringify(result, null, 2)
+
+      if (response.ok && result.success) {
+        console.log('DomainCheckout: Registration successful with cookie authentication');
+        return result;
+      } else {
+        console.log('DomainCheckout: Cookie auth failed:', result);
+      }
+    } catch (error) {
+      console.log('DomainCheckout: Cookie auth request failed:', error);
+    }
+
+    // Method 3: Try to get a fresh token using the auth code
+    const storedAuthCode = sessionStorage.getItem('auth_code');
+    if (storedAuthCode) {
+      console.log('DomainCheckout: Attempting fresh token exchange');
+      try {
+        const tokenResponse = await fetch(`${BASE_URL}/customer/auth/exchange-code/${storedAuthCode}`, {
+          method: 'GET',
+          credentials: 'include',
         });
-        
-        // Handle authentication errors specifically
-        if (response.status === 401) {
-          console.error('DomainCheckout: Authentication failed, attempting token refresh');
-          const refreshed = await refreshToken();
-          if (refreshed) {
-            console.log('DomainCheckout: Token refreshed, retrying registration');
-            // Retry the request with the new token
-            const newToken = getAuthToken();
-            if (newToken) {
-              const retryResponse = await fetch(`${BASE_URL}/api/v1/register`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${newToken}`,
-                },
-                credentials: 'include',
-                body: JSON.stringify(registrationData),
-              });
-              
-              const retryResult = await retryResponse.json();
-              if (retryResponse.ok) {
-                console.log('DomainCheckout: Registration successful on retry:', JSON.stringify(retryResult, null, 2));
-                return retryResult;
-              } else {
-                console.error('DomainCheckout: Registration failed on retry:', JSON.stringify(retryResult, null, 2));
-                throw new Error(retryResult.detail || `Registration failed: ${retryResponse.status}`);
-              }
+
+        if (tokenResponse.ok) {
+          const tokenData = await tokenResponse.json();
+          if (tokenData.success && tokenData.data?.access_token) {
+            console.log('DomainCheckout: Fresh token obtained, retrying registration');
+            
+            // Store the fresh token
+            localStorage.setItem('access_token', tokenData.data.access_token);
+            if (tokenData.data.token) {
+              localStorage.setItem('session_token', tokenData.data.token);
+            }
+
+            // Retry with fresh token
+            const response = await fetch(`${BASE_URL}/api/v1/register`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${tokenData.data.access_token}`,
+              },
+              credentials: 'include',
+              body: JSON.stringify(registrationData),
+            });
+
+            const result = await response.json();
+            if (response.ok && result.success) {
+              console.log('DomainCheckout: Registration successful with fresh token');
+              return result;
             }
           }
-          throw new Error('Authentication failed. Please sign in again.');
         }
-        
-        throw new Error(result.detail || `Registration failed with status: ${response.status}`);
+      } catch (error) {
+        console.log('DomainCheckout: Fresh token exchange failed:', error);
       }
-
-      console.log('DomainCheckout: Registration response:', JSON.stringify(result, null, 2));
-      return result;
-    } catch (error) {
-      console.error('DomainCheckout: Registration error:', error);
-      throw error;
     }
+
+    // Method 4: Try to get user session and token from /me endpoint
+    console.log('DomainCheckout: Attempting session recovery via /me endpoint');
+    try {
+      const meResponse = await fetch(`${BASE_URL}/customer/auth/me`, {
+        method: 'GET',
+        credentials: 'include', // Use cookies
+      });
+
+      if (meResponse.ok) {
+        const meData = await meResponse.json();
+        if (meData.success && meData.data?.access_token) {
+          console.log('DomainCheckout: Session recovered, retrying registration');
+          
+          // Store the recovered token
+          localStorage.setItem('access_token', meData.data.access_token);
+
+          const response = await fetch(`${BASE_URL}/api/v1/register`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${meData.data.access_token}`,
+            },
+            credentials: 'include',
+            body: JSON.stringify(registrationData),
+          });
+
+          const result = await response.json();
+          if (response.ok && result.success) {
+            console.log('DomainCheckout: Registration successful with recovered session');
+            return result;
+          }
+        }
+      }
+    } catch (error) {
+      console.log('DomainCheckout: Session recovery failed:', error);
+    }
+
+    // Method 5: Direct API call with user credentials (if available)
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      try {
+        const user = JSON.parse(storedUser);
+        console.log('DomainCheckout: Attempting direct registration with user session');
+        
+        // Try a different approach - use the customer ID in the request
+        const directRegistrationData = {
+          ...registrationData,
+          customer_id: user.id, // Add customer ID to the request
+        };
+
+        const response = await fetch(`${BASE_URL}/api/v1/register`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify(directRegistrationData),
+        });
+
+        const result = await response.json();
+        if (response.ok && result.success) {
+          console.log('DomainCheckout: Registration successful with direct approach');
+          return result;
+        }
+      } catch (error) {
+        console.log('DomainCheckout: Direct registration failed:', error);
+      }
+    }
+
+    // If all methods fail, throw an authentication error
+    console.error('DomainCheckout: All authentication methods failed');
+    throw new Error('Authentication failed. Please sign in again.');
   };
 
-  const handleCheckout = async (e: React.FormEvent) => {
+  const handleCheckout = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     
     if (!validateForm()) {
@@ -325,20 +437,6 @@ export default function DomainCheckout() {
       setErrors({ api: 'Please sign in to complete the registration.' });
       navigate('/signin?return=checkout&domain=' + encodeURIComponent(domain));
       return;
-    }
-
-    const authToken = getAuthToken();
-    if (!authToken) {
-      console.log('DomainCheckout: No token, attempting refresh before checkout');
-      const refreshed = await refreshToken();
-      const newToken = getAuthToken();
-      
-      if (!refreshed || !newToken) {
-        console.error('DomainCheckout: User not authenticated or token missing after refresh');
-        setErrors({ api: 'Authentication failed. Please sign in again.' });
-        navigate('/signin?return=checkout&domain=' + encodeURIComponent(domain));
-        return;
-      }
     }
 
     setIsProcessing(true);
@@ -537,110 +635,6 @@ export default function DomainCheckout() {
                     type="text"
                     name="fullName"
                     value={formData.fullName}
-                    onChange={handleInputChange}
-                    placeholder="John Doe"
-                    required
-                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                      errors.fullName ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                    }`}
-                  />
-                  {errors.fullName && <p className="text-red-600 text-sm mt-1">{errors.fullName}</p>}
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Email Address <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    placeholder="john@example.com"
-                    required
-                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                      errors.email ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                    }`}
-                  />
-                  {errors.email && <p className="text-red-600 text-sm mt-1">{errors.email}</p>}
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Phone Number <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="tel"
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleInputChange}
-                    placeholder="+254700000000"
-                    required
-                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                      errors.phone ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                    }`}
-                  />
-                  {errors.phone && <p className="text-red-600 text-sm mt-1">{errors.phone}</p>}
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Organization (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    name="organization"
-                    value={formData.organization}
-                    onChange={handleInputChange}
-                    placeholder="Company Name"
-                    className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                  />
-                </div>
-                
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Address <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="address"
-                    value={formData.address}
-                    onChange={handleInputChange}
-                    placeholder="Street address"
-                    required
-                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                      errors.address ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                    }`}
-                  />
-                  {errors.address && <p className="text-red-600 text-sm mt-1">{errors.address}</p>}
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    City <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="city"
-                    value={formData.city}
-                    onChange={handleInputChange}
-                    placeholder="Nairobi"
-                    required
-                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                      errors.city ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                    }`}
-                  />
-                  {errors.city && <p className="text-red-600 text-sm mt-1">{errors.city}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    State/Province <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="state"
-                    value={formData.state}
                     onChange={handleInputChange}
                     placeholder="Nairobi"
                     required
@@ -876,4 +870,6 @@ export default function DomainCheckout() {
       </div>
     </div>
   );
-}
+};
+
+export default DomainCheckout
