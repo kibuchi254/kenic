@@ -21,7 +21,7 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (token: string, user: User) => void;
+  login: (token: string | null, user: User) => Promise<void>;
   logout: () => void;
   refreshToken: () => Promise<boolean>;
 }
@@ -36,7 +36,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Enhanced cookie getter with fallback options
   const getCookie = useCallback((name: string): string | undefined => {
     const value = `; ${document.cookie}`;
     const parts = value.split(`; ${name}=`);
@@ -51,9 +50,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return undefined;
   }, []);
 
-  // Get token from multiple sources with priority order
   const getToken = useCallback((): string | null => {
-    // Priority 1: URL parameter (for OAuth callbacks)
     const urlParams = new URLSearchParams(window.location.search);
     const urlToken = urlParams.get('token');
     if (urlToken) {
@@ -61,27 +58,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return urlToken;
     }
 
-    // Priority 2: Memory state (current session)
     if (token) {
       console.log('AuthProvider: Token found in memory');
       return token;
     }
 
-    // Priority 3: localStorage
     const localToken = localStorage.getItem('access_token') || localStorage.getItem('session_token');
     if (localToken && localToken !== 'undefined' && localToken !== 'null') {
       console.log('AuthProvider: Token found in localStorage');
       return localToken;
     }
 
-    // Priority 4: sessionStorage
     const sessionToken = sessionStorage.getItem('access_token') || sessionStorage.getItem('session_token');
     if (sessionToken && sessionToken !== 'undefined' && sessionToken !== 'null') {
       console.log('AuthProvider: Token found in sessionStorage');
       return sessionToken;
     }
 
-    // Priority 5: Cookies (shared with console subdomain)
     const cookieToken = getCookie('session_token') || getCookie('access_token');
     if (cookieToken) {
       console.log('AuthProvider: Token found in cookies');
@@ -92,7 +85,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return null;
   }, [token, getCookie]);
 
-  // Get stored user data
   const getStoredUser = useCallback((): User | null => {
     try {
       const localUser = localStorage.getItem('user');
@@ -110,7 +102,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return null;
   }, []);
 
-  // Validate token with backend
   const validateToken = useCallback(async (tokenToValidate: string): Promise<{ valid: boolean; user?: User; newToken?: string }> => {
     try {
       console.log('AuthProvider: Validating token with backend...');
@@ -122,23 +113,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         },
         credentials: 'include',
       });
-      
+
       if (!response.ok) {
         console.error('AuthProvider: Token validation failed with status:', response.status);
         return { valid: false };
       }
-      
+
       const data = await response.json();
       console.log('AuthProvider: Token validation response:', data.success ? 'SUCCESS' : 'FAILED');
-      
+
       if (data.success && data.data) {
         return {
           valid: true,
           user: data.data.user,
-          newToken: data.data.token // In case backend issues a new token
+          newToken: data.data.token,
         };
       }
-      
+
       return { valid: false };
     } catch (error) {
       console.error('AuthProvider: Token validation error:', error);
@@ -146,64 +137,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // Store auth data across all storage mechanisms
   const storeAuthData = useCallback((authToken: string, userData: User) => {
     console.log('AuthProvider: Storing auth data for user:', userData.email);
-    
-    // Store in memory
+
     setToken(authToken);
     setUser(userData);
     setIsAuthenticated(true);
-    
-    // Store in localStorage (persistent)
+
     localStorage.setItem('access_token', authToken);
     localStorage.setItem('session_token', authToken);
     localStorage.setItem('user', JSON.stringify(userData));
-    
-    // Store in sessionStorage (backup)
+
     sessionStorage.setItem('access_token', authToken);
     sessionStorage.setItem('session_token', authToken);
     sessionStorage.setItem('user', JSON.stringify(userData));
-    
-    // Set cookie for cross-subdomain sharing (with console.digikenya.co.ke)
+
     const expires = new Date();
-    expires.setDate(expires.getDate() + 7); // 7 days expiry
-    
+    expires.setDate(expires.getDate() + 7);
     document.cookie = `session_token=${authToken}; expires=${expires.toUTCString()}; path=/; domain=.digikenya.co.ke; secure; samesite=lax`;
     document.cookie = `access_token=${authToken}; expires=${expires.toUTCString()}; path=/; domain=.digikenya.co.ke; secure; samesite=lax`;
-    
+
     console.log('AuthProvider: Auth data stored successfully');
   }, []);
 
-  // Clear all auth data
   const clearAuthData = useCallback(() => {
     console.log('AuthProvider: Clearing all auth data');
-    
-    // Clear memory
+
     setToken(null);
     setUser(null);
     setIsAuthenticated(false);
-    
-    // Clear localStorage
+
     localStorage.removeItem('access_token');
     localStorage.removeItem('session_token');
     localStorage.removeItem('user');
-    
-    // Clear sessionStorage
+
     sessionStorage.removeItem('access_token');
     sessionStorage.removeItem('session_token');
     sessionStorage.removeItem('user');
-    
-    // Clear cookies (both current domain and subdomain)
+
     document.cookie = 'session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.digikenya.co.ke';
     document.cookie = 'access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.digikenya.co.ke';
     document.cookie = 'session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=digikenya.co.ke';
     document.cookie = 'access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=digikenya.co.ke';
-    
+
     console.log('AuthProvider: Auth data cleared');
   }, []);
 
-  // Refresh token functionality
   const refreshToken = useCallback(async (): Promise<boolean> => {
     const currentToken = getToken();
     if (!currentToken) {
@@ -239,37 +218,76 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [getToken, storeAuthData]);
 
-  // Initialize auth on app start
+  const login = useCallback(async (newToken: string | null, newUser: User) => {
+    console.log('AuthProvider: Logging in user:', newUser.email);
+
+    if (!newToken) {
+      console.warn('AuthProvider: No token provided for login, attempting to fetch token');
+      const currentToken = getToken();
+      if (currentToken) {
+        const validation = await validateToken(currentToken);
+        if (validation.valid && validation.user) {
+          storeAuthData(validation.newToken || currentToken, validation.user);
+          return;
+        }
+      }
+      console.error('AuthProvider: No valid token available for login');
+      throw new Error('Authentication token is missing');
+    }
+
+    const validation = await validateToken(newToken);
+    if (validation.valid) {
+      storeAuthData(validation.newToken || newToken, validation.user || newUser);
+    } else {
+      console.error('AuthProvider: Provided token is invalid');
+      throw new Error('Invalid authentication token');
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('token')) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [storeAuthData, validateToken, getToken]);
+
+  const logout = useCallback(() => {
+    console.log('AuthProvider: Logging out user');
+
+    if (token) {
+      fetch(`${BASE_URL}/customer/auth/logout`, {
+        method: 'POST',
+        headers: { 
+          Authorization: `Bearer ${token}`, 
+          'Content-Type': 'application/json' 
+        },
+        credentials: 'include',
+      }).catch((error) => console.error('AuthProvider: Logout API error:', error));
+    }
+
+    clearAuthData();
+    window.location.href = '/signin';
+  }, [token, clearAuthData]);
+
   useEffect(() => {
     const initializeAuth = async () => {
       console.log('AuthProvider: Initializing auth for root domain...');
-      
+
       try {
-        // Step 1: Try to get token from any source
         let currentToken = getToken();
         console.log('AuthProvider: Current token status:', currentToken ? 'FOUND' : 'NOT_FOUND');
 
-        // Step 2: Try to get stored user
         let currentUser = getStoredUser();
         console.log('AuthProvider: Stored user status:', currentUser ? 'FOUND' : 'NOT_FOUND');
 
-        // Step 3: If we have a token, validate it
         if (currentToken) {
           const validation = await validateToken(currentToken);
-          
           if (validation.valid) {
             console.log('AuthProvider: Token validation successful');
-            
-            // Use user from validation if available, otherwise use stored user
             const finalUser = validation.user || currentUser;
             const finalToken = validation.newToken || currentToken;
-            
+
             if (finalUser) {
               storeAuthData(finalToken, finalUser);
-              
-              // Clean up URL if token was in URL
-              const urlParams = new URLSearchParams(window.location.search);
-              if (urlParams.has('token')) {
+              if (new URLSearchParams(window.location.search).has('token')) {
                 window.history.replaceState({}, document.title, window.location.pathname);
               }
             } else {
@@ -294,47 +312,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     initializeAuth();
-  }, []); // Empty dependency array - only run once on mount
+  }, [getToken, getStoredUser, validateToken, storeAuthData, clearAuthData]);
 
-  // Login function
-  const login = useCallback((newToken: string, newUser: User) => {
-    console.log('AuthProvider: Logging in user:', newUser.email);
-    storeAuthData(newToken, newUser);
-    
-    // Clean up URL if token was passed as parameter
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.has('token')) {
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
-  }, [storeAuthData]);
-
-  // Logout function
-  const logout = useCallback(() => {
-    console.log('AuthProvider: Logging out user');
-    
-    // Make logout API call but don't block the logout process
-    if (token) {
-      fetch(`${BASE_URL}/customer/auth/logout`, {
-        method: 'POST',
-        headers: { 
-          Authorization: `Bearer ${token}`, 
-          'Content-Type': 'application/json' 
-        },
-        credentials: 'include',
-      }).catch((error) => console.error('AuthProvider: Logout API error:', error));
-    }
-
-    clearAuthData();
-    
-    // Redirect to signin page
-    window.location.href = '/signin';
-  }, [token, clearAuthData]);
-
-  // Auto-refresh token periodically
   useEffect(() => {
     if (isAuthenticated && !isLoading) {
       console.log('AuthProvider: Setting up token refresh interval');
-      
+
       const interval = setInterval(async () => {
         console.log('AuthProvider: Periodic token refresh check');
         const currentToken = getToken();
@@ -345,7 +328,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             logout();
           }
         }
-      }, 15 * 60 * 1000); // Check every 15 minutes
+      }, 15 * 60 * 1000);
 
       return () => {
         console.log('AuthProvider: Clearing token refresh interval');
@@ -364,11 +347,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     refreshToken,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => {

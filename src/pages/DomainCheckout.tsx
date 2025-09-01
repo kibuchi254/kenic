@@ -39,11 +39,9 @@ export default function DomainCheckout() {
   const navigate = useNavigate();
   const { user, token, isAuthenticated, isLoading, refreshToken } = useAuth();
 
-  // Get domain from URL parameters as fallback
   const urlParams = new URLSearchParams(location.search);
   const urlDomain = urlParams.get('domain') || 'myawesomebrand.co.ke';
 
-  // Initialize checkout state
   const [checkoutState, setCheckoutState] = useState<CheckoutState>(() => {
     console.log('DomainCheckout: Initializing checkout state');
     const defaultState: CheckoutState = {
@@ -53,7 +51,6 @@ export default function DomainCheckout() {
       isQuickCheckout: false,
     };
 
-    // Try location.state
     if (location.state) {
       console.log('DomainCheckout: Using location.state:', JSON.stringify(location.state, null, 2));
       const state = location.state as Partial<CheckoutState>;
@@ -68,7 +65,6 @@ export default function DomainCheckout() {
       }
     }
 
-    // Try sessionStorage
     const pendingCheckout = sessionStorage.getItem('pendingCheckout');
     if (pendingCheckout) {
       try {
@@ -89,19 +85,11 @@ export default function DomainCheckout() {
       }
     }
 
-    // Fallback to default with URL domain
     console.log('DomainCheckout: Falling back to default checkout state with URL domain:', urlDomain);
     return defaultState;
   });
 
-  const { 
-    domain, 
-    price, 
-    renewal, 
-    isQuickCheckout,
-    registrar,
-    extension 
-  } = checkoutState;
+  const { domain, price, renewal, isQuickCheckout, registrar, extension } = checkoutState;
 
   const taxRate = 0.16;
   const tax = Math.round(price * taxRate);
@@ -146,22 +134,14 @@ export default function DomainCheckout() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-    
+    setFormData(prev => ({ ...prev, [name]: value }));
     if (errors[name]) {
-      setErrors(prev => ({
-        ...prev,
-        [name]: ""
-      }));
+      setErrors(prev => ({ ...prev, [name]: "" }));
     }
   };
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
-    
     if (!formData.fullName.trim()) newErrors.fullName = 'Full name is required';
     if (!formData.email.trim()) {
       newErrors.email = 'Email is required';
@@ -309,7 +289,7 @@ export default function DomainCheckout() {
 
     try {
       setProcessingStep("Processing payment...");
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate payment processing
+      await new Promise(resolve => setTimeout(resolve, 2000));
       console.log('DomainCheckout: Payment processing completed');
 
       setProcessingStep("Registering domain...");
@@ -469,9 +449,7 @@ export default function DomainCheckout() {
               
               {errors.api && (
                 <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                  <div className="flex">
-                    <div className="text-red-600 text-sm">{errors.api}</div>
-                  </div>
+                  <div className="text-red-600 text-sm">{errors.api}</div>
                 </div>
               )}
               
@@ -644,9 +622,7 @@ export default function DomainCheckout() {
                   type="button"
                   onClick={() => setPaymentMethod("mpesa")}
                   className={`flex flex-col items-center justify-center p-4 border-2 rounded-xl transition-all ${
-                    paymentMethod === "mpesa" 
-                      ? "border-green-500 bg-green-50 shadow-md" 
-                      : "border-gray-300 hover:border-gray-400"
+                    paymentMethod === "mpesa" ? "border-green-500 bg-green-50 shadow-md" : "border-gray-300 hover:border-gray-400"
                   }`}
                 >
                   <FaMoneyBill size={28} className={paymentMethod === "mpesa" ? "text-green-600" : "text-gray-500"} />
@@ -658,9 +634,7 @@ export default function DomainCheckout() {
                   type="button"
                   onClick={() => setPaymentMethod("card")}
                   className={`flex flex-col items-center justify-center p-4 border-2 rounded-xl transition-all ${
-                    paymentMethod === "card" 
-                      ? "border-green-500 bg-green-50 shadow-md" 
-                      : "border-gray-300 hover:border-gray-400"
+                    paymentMethod === "card" ? "border-green-500 bg-green-50 shadow-md" : "border-gray-300 hover:border-gray-400"
                   }`}
                 >
                   <FaCreditCard size={28} className={paymentMethod === "card" ? "text-green-600" : "text-gray-500"} />
@@ -672,9 +646,7 @@ export default function DomainCheckout() {
                   type="button"
                   onClick={() => setPaymentMethod("paypal")}
                   className={`flex flex-col items-center justify-center p-4 border-2 rounded-xl transition-all ${
-                    paymentMethod === "paypal" 
-                      ? "border-green-500 bg-green-50 shadow-md" 
-                      : "border-gray-300 hover:border-gray-400"
+                    paymentMethod === "paypal" ? "border-green-500 bg-green-50 shadow-md" : "border-gray-300 hover:border-gray-400"
                   }`}
                 >
                   <FaPaypal size={28} className={paymentMethod === "paypal" ? "text-green-600" : "text-gray-500"} />
