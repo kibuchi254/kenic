@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, AlertCircle, Loader2, Shield, Check, Mail, RefreshCw } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 
 // Configuration constants
@@ -247,8 +247,28 @@ const Signin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [verificationAttempts, setVerificationAttempts] = useState(0);
+  
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { login, isAuthenticated } = useAuth();
+
+  // Extract URL parameters for checkout flow
+  const returnType = searchParams.get('return');
+  const domainParam = searchParams.get('domain');
+  const isCheckoutReturn = returnType === 'checkout';
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      if (isCheckoutReturn) {
+        // Redirect back to checkout
+        navigate('/domain-checkout');
+      } else {
+        // Redirect to dashboard
+        navigate('/');
+      }
+    }
+  }, [isAuthenticated, isCheckoutReturn, navigate]);
 
   // Cooldown timer effect
   useEffect(() => {
@@ -338,6 +358,20 @@ const Signin = () => {
     return Object.keys(newErrors).length === 0;
   };
 
+  const handleAuthSuccess = (token: string, user: any) => {
+    // Use the login function from AuthContext
+    login(token, user);
+    
+    // Handle post-login redirection
+    if (isCheckoutReturn) {
+      // Redirect back to checkout
+      navigate('/domain-checkout');
+    } else {
+      // Redirect to main dashboard or console
+      navigate('/');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
@@ -350,10 +384,19 @@ const Signin = () => {
       console.log('Login response:', response);
 
       if (response.success && response.data) {
+        if (isCheckoutReturn) {
+          // For checkout returns, handle auth directly here
+          const { token, user } = response.data;
+          if (token && user) {
+            handleAuthSuccess(token, user);
+            return;
+          }
+        }
+        
         const { redirect_url } = response.data;
         
         if (redirect_url) {
-          // Redirect to the secure callback URL with temporary code
+          // For normal flow, redirect to the secure callback URL with temporary code
           console.log('Redirecting to:', redirect_url);
           window.location.href = redirect_url;
         } else {
@@ -416,10 +459,19 @@ const Signin = () => {
       console.log('Verify email response:', response);
 
       if (response.success && response.data) {
+        if (isCheckoutReturn) {
+          // For checkout returns, handle auth directly here
+          const { token, user } = response.data;
+          if (token && user) {
+            handleAuthSuccess(token, user);
+            return;
+          }
+        }
+        
         const { redirect_url } = response.data;
         
         if (redirect_url) {
-          // Redirect to the secure callback URL with temporary code
+          // For normal flow, redirect to the secure callback URL with temporary code
           console.log('Redirecting to:', redirect_url);
           window.location.href = redirect_url;
         } else {
@@ -483,10 +535,19 @@ const Signin = () => {
       console.log('Google auth response:', apiResponse);
 
       if (apiResponse.success && apiResponse.data) {
+        if (isCheckoutReturn) {
+          // For checkout returns, handle auth directly here
+          const { token, user } = apiResponse.data;
+          if (token && user) {
+            handleAuthSuccess(token, user);
+            return;
+          }
+        }
+        
         const { redirect_url } = apiResponse.data;
         
         if (redirect_url) {
-          // Redirect to the secure callback URL with temporary code
+          // For normal flow, redirect to the secure callback URL with temporary code
           console.log('Google auth redirecting to:', redirect_url);
           window.location.href = redirect_url;
         } else {
@@ -527,6 +588,21 @@ const Signin = () => {
       <div className="font-sans min-h-screen flex flex-col lg:flex-row">
         <div className="flex-1 flex items-center justify-center p-4 sm:p-8 bg-gradient-to-br from-gray-50 to-white">
           <div className="w-full max-w-md space-y-6">
+            {/* Checkout Banner */}
+            {isCheckoutReturn && domainParam && (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <div>
+                    <h3 className="font-semibold text-green-900">Complete Your Domain Registration</h3>
+                    <p className="text-sm text-green-700">
+                      Sign in to register <span className="font-medium">{decodeURIComponent(domainParam)}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="text-center space-y-2">
               <div className="flex items-center justify-center space-x-3 mb-4">
                 <KenicLogo />
@@ -535,8 +611,15 @@ const Signin = () => {
                   <p className="text-xs text-gray-600">Get Your .KE Today!</p>
                 </div>
               </div>
-              <h2 className="text-2xl font-bold text-gray-900">Welcome back</h2>
-              <p className="text-gray-600 text-sm">Sign in to your account to continue</p>
+              <h2 className="text-2xl font-bold text-gray-900">
+                {isCheckoutReturn ? 'Sign in to continue' : 'Welcome back'}
+              </h2>
+              <p className="text-gray-600 text-sm">
+                {isCheckoutReturn 
+                  ? 'Sign in to complete your domain registration' 
+                  : 'Sign in to your account to continue'
+                }
+              </p>
             </div>
 
             {errors.api && (
@@ -629,27 +712,55 @@ const Signin = () => {
           <div className="absolute inset-0 bg-black/10"></div>
           <div className="relative z-10 flex items-center justify-center p-8 text-white">
             <div className="text-center space-y-6 max-w-md">
-              <div className="w-16 h-16 mx-auto bg-white/20 rounded-full flex items-center justify-center">
-                <Shield className="h-8 w-8" />
-              </div>
-              <h3 className="text-2xl font-bold">Secure & Fast</h3>
-              <p className="text-red-100 text-base leading-relaxed">
-                Access your .KE domain management with enterprise-grade security and fast performance.
-              </p>
-              <div className="grid grid-cols-1 gap-4 text-left">
-                <div className="flex items-center space-x-3">
-                  <Check className="h-5 w-5 text-green-400 flex-shrink-0" />
-                  <span className="text-sm">Two-factor authentication</span>
-                </div>
-                <div className="flex items-center space-x-3">
-                  <Check className="h-5 w-5 text-green-400 flex-shrink-0" />
-                  <span className="text-sm">SSL encrypted connections</span>
-                </div>
-                <div className="flex items-center space-x-3">
-                  <Check className="h-5 w-5 text-green-400 flex-shrink-0" />
-                  <span className="text-sm">24/7 account monitoring</span>
-                </div>
-              </div>
+              {isCheckoutReturn ? (
+                <>
+                  <div className="w-16 h-16 mx-auto bg-white/20 rounded-full flex items-center justify-center">
+                    <Check className="h-8 w-8" />
+                  </div>
+                  <h3 className="text-2xl font-bold">Almost There!</h3>
+                  <p className="text-red-100 text-base leading-relaxed">
+                    Sign in to complete your {domainParam ? `${decodeURIComponent(domainParam)} ` : ''}domain registration and get started with your online presence.
+                  </p>
+                  <div className="grid grid-cols-1 gap-4 text-left">
+                    <div className="flex items-center space-x-3">
+                      <Check className="h-5 w-5 text-green-400 flex-shrink-0" />
+                      <span className="text-sm">Instant domain activation</span>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <Check className="h-5 w-5 text-green-400 flex-shrink-0" />
+                      <span className="text-sm">Free DNS management</span>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <Check className="h-5 w-5 text-green-400 flex-shrink-0" />
+                      <span className="text-sm">24/7 support included</span>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="w-16 h-16 mx-auto bg-white/20 rounded-full flex items-center justify-center">
+                    <Shield className="h-8 w-8" />
+                  </div>
+                  <h3 className="text-2xl font-bold">Secure & Fast</h3>
+                  <p className="text-red-100 text-base leading-relaxed">
+                    Access your .KE domain management with enterprise-grade security and fast performance.
+                  </p>
+                  <div className="grid grid-cols-1 gap-4 text-left">
+                    <div className="flex items-center space-x-3">
+                      <Check className="h-5 w-5 text-green-400 flex-shrink-0" />
+                      <span className="text-sm">Two-factor authentication</span>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <Check className="h-5 w-5 text-green-400 flex-shrink-0" />
+                      <span className="text-sm">SSL encrypted connections</span>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <Check className="h-5 w-5 text-green-400 flex-shrink-0" />
+                      <span className="text-sm">24/7 account monitoring</span>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -775,7 +886,7 @@ const Signin = () => {
                 </div>
                 <div className="flex items-center space-x-3">
                   <div className="w-2 h-2 bg-gray-400 rounded-full flex-shrink-0"></div>
-                  <span>Access your dashboard</span>
+                  <span>{isCheckoutReturn ? 'Complete domain registration' : 'Access your dashboard'}</span>
                 </div>
               </div>
             </div>
