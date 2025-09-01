@@ -576,21 +576,28 @@ const Signin = () => {
     
     try {
       const apiResponse = await apiService.googleAuth(response.credential);
-      console.log('Google auth response:', apiResponse);
+      console.log('Google auth response:', JSON.stringify(apiResponse, null, 2));
 
       if (apiResponse.success && apiResponse.data) {
-        // Check for direct token/user response first (for checkout flow)
+        // Check for empty data object
+        if (!apiResponse.data || Object.keys(apiResponse.data).length === 0) {
+          console.warn('Signin: Google auth response data is empty');
+          setErrors({ 
+            google: 'Authentication failed due to missing data. Please try email sign-in.' 
+          });
+          return;
+        }
+
+        // Adjust destructuring based on actual API response (update field names if necessary)
         const { token, user, redirect_url } = apiResponse.data;
         
         if (token && user && isCheckoutReturn) {
-          // Direct authentication for checkout flow
           console.log('Signin: Direct Google auth for checkout flow');
           handleAuthSuccess(token, user);
           return;
         }
         
         if (redirect_url && !isCheckoutReturn) {
-          // Redirect flow for normal login
           console.log('Signin: Google auth redirect flow for normal login');
           window.location.href = redirect_url;
           return;
@@ -603,7 +610,11 @@ const Signin = () => {
           return;
         }
         
-        throw new ApiError('Invalid response format from Google authentication');
+        // Log unexpected response format
+        console.warn('Signin: Unexpected Google auth response format:', apiResponse.data);
+        setErrors({ 
+          google: 'Authentication failed due to an unexpected response. Please try email sign-in.' 
+        });
       } else {
         throw new ApiError(apiResponse.message || 'Google authentication failed');
       }
