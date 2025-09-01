@@ -7,7 +7,6 @@ import { useAuth } from '@/context/AuthContext';
 const BASE_URL = 'https://api.digikenya.co.ke';
 const GOOGLE_CLIENT_ID = '1086172926615-vtjrru158m0vgnt5s0aq8mdbjj49drub.apps.googleusercontent.com';
 const CONSOLE_URL = 'https://console.digikenya.co.ke';
-const DOMAIN_CHECKOUT_URL = 'https://digikenya.co.ke/domain-checkout';
 
 // API Endpoints
 const API_ENDPOINTS = {
@@ -258,29 +257,32 @@ const Signin = () => {
   const domainParam = searchParams.get('domain');
   const isCheckoutReturn = returnType === 'checkout';
 
-  // Log URL parameters for debugging
-  useEffect(() => {
-    console.log('Signin: URL Parameters', {
-      returnType,
-      domainParam,
-      isCheckoutReturn,
-      currentUrl: window.location.href,
-    });
-  }, [returnType, domainParam, isCheckoutReturn]);
+  console.log('Signin: URL params detected:', { returnType, domainParam, isCheckoutReturn });
 
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      console.log('Signin: User is authenticated, determining redirect...');
-      if (isCheckoutReturn && domainParam) {
-        console.log('Signin: Redirecting to domain-checkout for checkout flow');
-        window.location.href = DOMAIN_CHECKOUT_URL; // Use full URL to ensure correct domain
+      if (isCheckoutReturn) {
+        console.log('Signin: Already authenticated, redirecting to checkout');
+        // Restore checkout data from sessionStorage
+        const pendingCheckout = sessionStorage.getItem('pendingCheckout');
+        let checkoutState = {};
+        if (pendingCheckout) {
+          try {
+            checkoutState = JSON.parse(pendingCheckout);
+            console.log('Signin: Restored checkout state:', checkoutState);
+            sessionStorage.removeItem('pendingCheckout'); // Clean up
+          } catch (error) {
+            console.error('Signin: Error parsing pendingCheckout:', error);
+          }
+        }
+        navigate('/domain-checkout', { state: checkoutState });
       } else {
-        console.log('Signin: Redirecting to console dashboard for normal flow');
-        window.location.href = `${CONSOLE_URL}/dashboard`;
+        console.log('Signin: Already authenticated, redirecting to dashboard');
+        navigate('/');
       }
     }
-  }, [isAuthenticated, isCheckoutReturn, domainParam]);
+  }, [isAuthenticated, isCheckoutReturn, navigate]);
 
   // Cooldown timer effect
   useEffect(() => {
@@ -370,17 +372,32 @@ const Signin = () => {
     return Object.keys(newErrors).length === 0;
   };
 
+  // Centralized authentication success handler
   const handleAuthSuccess = (token: string, user: any) => {
-    console.log('Signin: handleAuthSuccess called', { isCheckoutReturn, domainParam });
-    // Use the login function from AuthContext
+    console.log('Signin: Authentication successful for user:', user.email);
+    console.log('Signin: Is checkout return?', isCheckoutReturn);
+    
+    // Use the login function from AuthContext to store auth data
     login(token, user);
     
-    // Handle post-login redirection
-    if (isCheckoutReturn && domainParam) {
-      console.log('Signin: Redirecting to domain-checkout for checkout flow');
-      window.location.href = DOMAIN_CHECKOUT_URL; // Use full URL to ensure correct domain
+    // Handle post-login redirection based on the flow
+    if (isCheckoutReturn) {
+      console.log('Signin: Redirecting to domain checkout');
+      // Restore checkout data from sessionStorage
+      const pendingCheckout = sessionStorage.getItem('pendingCheckout');
+      let checkoutState = {};
+      if (pendingCheckout) {
+        try {
+          checkoutState = JSON.parse(pendingCheckout);
+          console.log('Signin: Restored checkout state:', checkoutState);
+          sessionStorage.removeItem('pendingCheckout'); // Clean up
+        } catch (error) {
+          console.error('Signin: Error parsing pendingCheckout:', error);
+        }
+      }
+      navigate('/domain-checkout', { state: checkoutState });
     } else {
-      console.log('Signin: Redirecting to console dashboard for normal flow');
+      console.log('Signin: Redirecting to console dashboard');
       window.location.href = `${CONSOLE_URL}/dashboard`;
     }
   };
@@ -393,28 +410,35 @@ const Signin = () => {
     setErrors({});
 
     try {
-      console.log('Signin: Attempting login with email:', formData.email);
       const response = await apiService.login(formData.email.trim(), formData.password);
-      console.log('Signin: Login response:', response);
+      console.log('Login response:', response);
 
       if (response.success && response.data) {
+        // Check for direct token/user response first (for checkout flow)
         const { token, user, redirect_url } = response.data;
         
-        if (token && user) {
-          console.log('Signin: Direct auth success, calling handleAuthSuccess');
+        if (token && user && isCheckoutReturn) {
+          // Direct authentication for checkout flow
+          console.log('Signin: Direct auth for checkout flow');
           handleAuthSuccess(token, user);
-        } else if (redirect_url) {
-          console.log('Signin: Using server-provided redirect URL:', redirect_url);
-          // Only redirect if not in checkout flow to prevent overriding
-          if (!isCheckoutReturn) {
-            window.location.href = redirect_url;
-          } else {
-            console.log('Signin: Overriding server redirect for checkout flow');
-            window.location.href = DOMAIN_CHECKOUT_URL;
-          }
-        } else {
-          throw new ApiError('No token or redirect URL received from server');
+          return;
         }
+        
+        if (redirect_url && !isCheckoutReturn) {
+          // Redirect flow for normal login
+          console.log('Signin: Redirect flow for normal login');
+          window.location.href = redirect_url;
+          return;
+        }
+        
+        // Fallback - if we have token/user but no specific flow detected
+        if (token && user) {
+          console.log('Signin: Fallback direct auth');
+          handleAuthSuccess(token, user);
+          return;
+        }
+        
+        throw new ApiError('Invalid response format from server');
       } else {
         throw new ApiError(response.message || 'Login failed');
       }
@@ -468,28 +492,35 @@ const Signin = () => {
     setErrors({});
 
     try {
-      console.log('Signin: Attempting OTP verification for email:', formData.email);
       const response = await apiService.verifyEmail(formData.email.trim(), otpString);
-      console.log('Signin: Verify email response:', response);
+      console.log('Verify email response:', response);
 
       if (response.success && response.data) {
+        // Check for direct token/user response first (for checkout flow)
         const { token, user, redirect_url } = response.data;
         
-        if (token && user) {
-          console.log('Signin: OTP verification success, calling handleAuthSuccess');
+        if (token && user && isCheckoutReturn) {
+          // Direct authentication for checkout flow
+          console.log('Signin: Direct auth after verification for checkout flow');
           handleAuthSuccess(token, user);
-        } else if (redirect_url) {
-          console.log('Signin: Using server-provided redirect URL:', redirect_url);
-          // Only redirect if not in checkout flow to prevent overriding
-          if (!isCheckoutReturn) {
-            window.location.href = redirect_url;
-          } else {
-            console.log('Signin: Overriding server redirect for checkout flow');
-            window.location.href = DOMAIN_CHECKOUT_URL;
-          }
-        } else {
-          throw new ApiError('No token or redirect URL received after verification');
+          return;
         }
+        
+        if (redirect_url && !isCheckoutReturn) {
+          // Redirect flow for normal login
+          console.log('Signin: Redirect flow after verification for normal login');
+          window.location.href = redirect_url;
+          return;
+        }
+        
+        // Fallback - if we have token/user but no specific flow detected
+        if (token && user) {
+          console.log('Signin: Fallback direct auth after verification');
+          handleAuthSuccess(token, user);
+          return;
+        }
+        
+        throw new ApiError('Invalid response format after verification');
       } else {
         throw new ApiError(response.message || 'Email verification failed');
       }
@@ -511,9 +542,7 @@ const Signin = () => {
 
   const handleResendVerification = async () => {
     try {
-      console.log('Signin: Resending verification code for email:', formData.email);
       const response = await apiService.resendVerification(formData.email.trim());
-      console.log('Signin: Resend verification response:', response);
       return response.success;
     } catch (error) {
       console.error('Signin: Resend verification error:', error);
@@ -546,28 +575,35 @@ const Signin = () => {
     setErrors({});
     
     try {
-      console.log('Signin: Attempting Google auth');
       const apiResponse = await apiService.googleAuth(response.credential);
-      console.log('Signin: Google auth response:', apiResponse);
+      console.log('Google auth response:', apiResponse);
 
       if (apiResponse.success && apiResponse.data) {
+        // Check for direct token/user response first (for checkout flow)
         const { token, user, redirect_url } = apiResponse.data;
         
-        if (token && user) {
-          console.log('Signin: Google auth success, calling handleAuthSuccess');
+        if (token && user && isCheckoutReturn) {
+          // Direct authentication for checkout flow
+          console.log('Signin: Direct Google auth for checkout flow');
           handleAuthSuccess(token, user);
-        } else if (redirect_url) {
-          console.log('Signin: Using server-provided redirect URL:', redirect_url);
-          // Only redirect if not in checkout flow to prevent overriding
-          if (!isCheckoutReturn) {
-            window.location.href = redirect_url;
-          } else {
-            console.log('Signin: Overriding server redirect for checkout flow');
-            window.location.href = DOMAIN_CHECKOUT_URL;
-          }
-        } else {
-          throw new ApiError('No token or redirect URL received from Google authentication');
+          return;
         }
+        
+        if (redirect_url && !isCheckoutReturn) {
+          // Redirect flow for normal login
+          console.log('Signin: Google auth redirect flow for normal login');
+          window.location.href = redirect_url;
+          return;
+        }
+        
+        // Fallback - if we have token/user but no specific flow detected
+        if (token && user) {
+          console.log('Signin: Fallback Google direct auth');
+          handleAuthSuccess(token, user);
+          return;
+        }
+        
+        throw new ApiError('Invalid response format from Google authentication');
       } else {
         throw new ApiError(apiResponse.message || 'Google authentication failed');
       }
