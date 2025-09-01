@@ -25,10 +25,12 @@ class ApiError extends Error {
   }
 }
 
-// API Service
+// API Service with fixed URL handling
 const apiService = {
   async makeRequest<T>(endpoint: string, options: RequestInit = {}): Promise<any> {
-    const url = `${BASE_URL}${endpoint}`;
+    // Clean endpoint to avoid double base URL
+    const cleanEndpoint = endpoint.startsWith('http') ? endpoint : `${BASE_URL}${endpoint}`;
+    
     const config: RequestInit = {
       ...options,
       headers: {
@@ -40,8 +42,8 @@ const apiService = {
     };
 
     try {
-      console.log(`API Request: ${config.method || 'GET'} ${url}`);
-      const response = await fetch(url, config);
+      console.log(`API Request: ${config.method || 'GET'} ${cleanEndpoint}`);
+      const response = await fetch(cleanEndpoint, config);
       const data = await response.json();
       console.log(`API Response: ${response.status}`, data);
 
@@ -80,14 +82,10 @@ const apiService = {
     });
   },
 
-  async exchangeCode(code: string, method: 'POST' | 'GET' = 'POST') {
-    if (method === 'GET') {
-      const url = `${BASE_URL}${API_ENDPOINTS.EXCHANGE_CODE}?code=${encodeURIComponent(code)}`;
-      return this.makeRequest(url, { method: 'GET' });
-    }
-    return this.makeRequest(API_ENDPOINTS.EXCHANGE_CODE, {
-      method: 'POST',
-      body: JSON.stringify({ code }),
+  async exchangeCode(code: string) {
+    // Use GET method as per your backend router
+    return this.makeRequest(`${API_ENDPOINTS.EXCHANGE_CODE}/${code}`, {
+      method: 'GET',
     });
   },
 
@@ -244,6 +242,12 @@ const OTPInput = ({ otp, setOtp, error }: {
   );
 };
 
+// Token data interface for better type safety
+interface TokenData {
+  token?: string;
+  access_token?: string;
+}
+
 // Main Signin Component
 const Signin = () => {
   const [currentStep, setCurrentStep] = useState('signin');
@@ -265,6 +269,14 @@ const Signin = () => {
   const isCheckoutReturn = returnType === 'checkout' && !!domainParam;
 
   console.log('Signin: URL params detected:', { returnType, domainParam, isCheckoutReturn });
+
+  // Helper function to extract token data from API response
+  const extractTokenData = (responseData: any): TokenData => {
+    return {
+      token: responseData.token,
+      access_token: responseData.access_token || responseData.token, // Fallback to token if access_token not present
+    };
+  };
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -397,8 +409,8 @@ const Signin = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  // Centralized authentication success handler
-  const handleAuthSuccess = async (token: string | null, user: any, authCode?: string) => {
+  // Centralized authentication success handler with access_token support
+  const handleAuthSuccess = async (tokenData: TokenData | string | null, user: any, authCode?: string) => {
     console.log('Signin: Authentication successful for user:', user.email);
     console.log('Signin: Is checkout return?', isCheckoutReturn);
 
@@ -409,9 +421,30 @@ const Signin = () => {
         console.log('Signin: Stored auth_code in sessionStorage:', authCode.substring(0, 20) + '...');
       }
 
-      // Use a temporary token if none provided (backend will validate session)
-      const tempToken = token || `temp-token-${user.id}-${Date.now()}`;
-      await login(tempToken, user);
+      // Normalize token data to the expected format
+      let normalizedTokenData: TokenData | null = null;
+      
+      if (typeof tokenData === 'string') {
+        // Legacy string token
+        normalizedTokenData = {
+          token: tokenData,
+          access_token: tokenData
+        };
+      } else if (tokenData && typeof tokenData === 'object') {
+        // Token object with access_token support
+        normalizedTokenData = tokenData;
+      }
+
+      // Log token data for debugging
+      if (normalizedTokenData) {
+        console.log('Signin: Token data:', {
+          token: normalizedTokenData.token ? 'EXISTS' : 'MISSING',
+          access_token: normalizedTokenData.access_token ? 'EXISTS' : 'MISSING'
+        });
+      }
+
+      // Use updated auth context login method
+      await login(normalizedTokenData, user, true); // isCheckoutFlow = true
 
       const pendingCheckout = sessionStorage.getItem('pendingCheckout');
       let checkoutState = {
@@ -456,10 +489,14 @@ const Signin = () => {
       console.log('Signin: Login response:', response);
 
       if (response.success && response.data) {
-        const { token, user, redirect_url } = response.data;
-        if (token && user && isCheckoutReturn) {
+        const { token, access_token, user, redirect_url } = response.data;
+        
+        // Extract token data with access_token support
+        const tokenData = extractTokenData(response.data);
+        
+        if ((token || access_token) && user && isCheckoutReturn) {
           console.log('Signin: Direct auth for checkout flow');
-          await handleAuthSuccess(token, user);
+          await handleAuthSuccess(tokenData, user);
           return;
         }
         if (redirect_url && !isCheckoutReturn) {
@@ -467,9 +504,9 @@ const Signin = () => {
           window.location.href = redirect_url;
           return;
         }
-        if (token && user) {
+        if ((token || access_token) && user) {
           console.log('Signin: Fallback direct auth');
-          await handleAuthSuccess(token, user);
+          await handleAuthSuccess(tokenData, user);
           return;
         }
         throw new ApiError('Invalid response format from server');
@@ -529,10 +566,14 @@ const Signin = () => {
       console.log('Signin: Verify email response:', response);
 
       if (response.success && response.data) {
-        const { token, user, redirect_url } = response.data;
-        if (token && user && isCheckoutReturn) {
+        const { token, access_token, user, redirect_url } = response.data;
+        
+        // Extract token data with access_token support
+        const tokenData = extractTokenData(response.data);
+        
+        if ((token || access_token) && user && isCheckoutReturn) {
           console.log('Signin: Direct auth after verification for checkout flow');
-          await handleAuthSuccess(token, user);
+          await handleAuthSuccess(tokenData, user);
           return;
         }
         if (redirect_url && !isCheckoutReturn) {
@@ -540,9 +581,9 @@ const Signin = () => {
           window.location.href = redirect_url;
           return;
         }
-        if (token && user) {
+        if ((token || access_token) && user) {
           console.log('Signin: Fallback direct auth after verification');
-          await handleAuthSuccess(token, user);
+          await handleAuthSuccess(tokenData, user);
           return;
         }
         throw new ApiError('Invalid response format after verification');
@@ -603,7 +644,7 @@ const Signin = () => {
       console.log('Signin: Google auth response:', JSON.stringify(apiResponse, null, 2));
 
       if (apiResponse.success && apiResponse.data) {
-        let { token, user, redirect_url } = apiResponse.data;
+        let { token, access_token, user, redirect_url } = apiResponse.data;
 
         // For checkout flow, prioritize client-side auth if user is verified
         if (isCheckoutReturn && user?.is_email_verified && user?.account_status === 'active') {
@@ -621,38 +662,29 @@ const Signin = () => {
             }
           }
 
-          // Try code exchange
-          if (authCode && !token) {
-            console.log('Signin: Exchanging code for token with POST');
+          // Try code exchange if no token but we have a code
+          if (authCode && !token && !access_token) {
+            console.log('Signin: Exchanging code for token');
             try {
-              const tokenResponse = await apiService.exchangeCode(authCode, 'POST');
-              if (tokenResponse.success && tokenResponse.data?.token) {
+              const tokenResponse = await apiService.exchangeCode(authCode);
+              if (tokenResponse.success && tokenResponse.data) {
                 token = tokenResponse.data.token;
+                access_token = tokenResponse.data.access_token || tokenResponse.data.token;
                 user = tokenResponse.data.user || user;
-                console.log('Signin: Token obtained:', token.substring(0, 20) + '...');
+                console.log('Signin: Token exchange successful');
               }
-            } catch (postError: any) {
-              console.error('Signin: POST code exchange error:', postError);
-              if (postError.statusCode === 405) {
-                console.log('Signin: POST failed, trying GET');
-                try {
-                  const tokenResponse = await apiService.exchangeCode(authCode, 'GET');
-                  if (tokenResponse.success && tokenResponse.data?.token) {
-                    token = tokenResponse.data.token;
-                    user = tokenResponse.data.user || user;
-                    console.log('Signin: Token obtained:', token.substring(0, 20) + '...');
-                  }
-                } catch (getError) {
-                  console.error('Signin: GET code exchange error:', getError);
-                  console.log('Signin: Code exchange failed, proceeding with user object for checkout');
-                }
-              }
+            } catch (codeExchangeError: any) {
+              console.error('Signin: Code exchange error:', codeExchangeError);
+              console.log('Signin: Code exchange failed, proceeding with user object for checkout');
             }
           }
 
-          // Proceed with auth even if token is missing (backend validates session)
-          console.log('Signin: Proceeding with checkout auth, token:', token ? token.substring(0, 20) + '...' : 'none');
-          await handleAuthSuccess(token, user, authCode);
+          // Extract token data with access_token support
+          const tokenData = extractTokenData({ token, access_token });
+
+          // Proceed with auth
+          console.log('Signin: Proceeding with checkout auth');
+          await handleAuthSuccess(tokenData, user, authCode);
           return;
         }
 
@@ -664,9 +696,10 @@ const Signin = () => {
         }
 
         // Fallback for direct auth
-        if (user && token) {
+        if (user && (token || access_token)) {
           console.log('Signin: Fallback Google direct auth');
-          await handleAuthSuccess(token, user);
+          const tokenData = extractTokenData({ token, access_token });
+          await handleAuthSuccess(tokenData, user);
           return;
         }
 
