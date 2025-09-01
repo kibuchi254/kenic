@@ -373,7 +373,7 @@ const Signin = () => {
   };
 
   // Centralized authentication success handler
-  const handleAuthSuccess = (token: string, user: any) => {
+  const handleAuthSuccess = (token: string | null, user: any) => {
     console.log('Signin: Authentication successful for user:', user.email);
     console.log('Signin: Is checkout return?', isCheckoutReturn);
     
@@ -588,25 +588,27 @@ const Signin = () => {
           return;
         }
 
-        // Adjust destructuring based on actual API response (update field names if necessary)
+        // Destructure response, allowing token to be optional
         const { token, user, redirect_url } = apiResponse.data;
         
-        if (token && user && isCheckoutReturn) {
+        if (user && isCheckoutReturn) {
+          // Direct authentication for checkout flow (token optional)
           console.log('Signin: Direct Google auth for checkout flow');
-          handleAuthSuccess(token, user);
+          handleAuthSuccess(token || null, user);
           return;
         }
         
         if (redirect_url && !isCheckoutReturn) {
+          // Redirect flow for normal login
           console.log('Signin: Google auth redirect flow for normal login');
           window.location.href = redirect_url;
           return;
         }
         
-        // Fallback - if we have token/user but no specific flow detected
-        if (token && user) {
+        // Fallback - if we have user but no specific flow detected
+        if (user) {
           console.log('Signin: Fallback Google direct auth');
-          handleAuthSuccess(token, user);
+          handleAuthSuccess(token || null, user);
           return;
         }
         
