@@ -18,10 +18,11 @@ interface User {
 
 interface AuthContextType {
   token: string | null;
+  accessToken: string | null; // New field for access_token
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (token: string | null, user: User, isCheckoutFlow?: boolean) => Promise<void>;
+  login: (tokenData: string | { token?: string; access_token?: string } | null, user: User, isCheckoutFlow?: boolean) => Promise<void>;
   logout: () => void;
   refreshToken: () => Promise<boolean>;
 }
@@ -31,62 +32,64 @@ const BASE_URL = 'https://api.digikenya.co.ke';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [token, setToken] = useState<string | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  const getToken = useCallback((): string | undefined => {
-    // Check localStorage first (our primary storage)
-    const localToken = localStorage.getItem('session_token');
+  const getToken = useCallback((): { token?: string; accessToken?: string } => {
+    // Check localStorage for both token types
+    const sessionToken = localStorage.getItem('session_token');
+    const localAccessToken = localStorage.getItem('access_token');
     
     // Enhanced cookie checking with multiple methods
-    const getCookieToken = (): string | undefined => {
-      // Method 1: Standard cookie parsing
-      const value = `; ${document.cookie}`;
-      const parts = value.split(`; session_token=`);
-      if (parts.length === 2) {
-        const cookieValue = parts.pop()?.split(';').shift();
-        if (cookieValue) return cookieValue;
-      }
-      
-      // Method 2: Alternative cookie parsing for access_token
-      const altParts = value.split(`; access_token=`);
-      if (altParts.length === 2) {
-        const altCookieValue = altParts.pop()?.split(';').shift();
-        if (altCookieValue) return altCookieValue;
-      }
-      
-      // Method 3: Manual cookie search (sometimes more reliable)
+    const getCookieTokens = (): { sessionToken?: string; accessToken?: string } => {
       const cookies = document.cookie.split(';');
+      let sessionToken: string | undefined;
+      let accessToken: string | undefined;
+      
       for (let cookie of cookies) {
         const trimmedCookie = cookie.trim();
         if (trimmedCookie.startsWith('session_token=')) {
-          return trimmedCookie.substring('session_token='.length);
-        }
-        if (trimmedCookie.startsWith('access_token=')) {
-          return trimmedCookie.substring('access_token='.length);
+          sessionToken = trimmedCookie.substring('session_token='.length);
+        } else if (trimmedCookie.startsWith('access_token=')) {
+          accessToken = trimmedCookie.substring('access_token='.length);
         }
       }
       
-      return undefined;
+      return { sessionToken, accessToken };
     };
     
-    const cookieToken = getCookieToken();
-    const finalToken = localToken || cookieToken;
+    const cookieTokens = getCookieTokens();
+    
+    // Prioritize access_token if available, fallback to session_token
+    const finalToken = sessionToken || cookieTokens.sessionToken;
+    const finalAccessToken = localAccessToken || cookieTokens.accessToken || finalToken;
     
     console.log('ROOT TOKEN CHECK:', {
-      localStorage: localToken ? 'EXISTS' : 'MISSING',
-      cookie: cookieToken ? 'EXISTS' : 'MISSING',
-      final: finalToken ? 'FOUND' : 'NOT_FOUND'
+      sessionToken: sessionToken ? 'EXISTS' : 'MISSING',
+      accessToken: localAccessToken ? 'EXISTS' : 'MISSING',
+      cookieSession: cookieTokens.sessionToken ? 'EXISTS' : 'MISSING',
+      cookieAccess: cookieTokens.accessToken ? 'EXISTS' : 'MISSING',
+      finalToken: finalToken ? 'FOUND' : 'NOT_FOUND',
+      finalAccessToken: finalAccessToken ? 'FOUND' : 'NOT_FOUND'
     });
     
-    // If we found a cookie token but no localStorage token, sync them
-    if (cookieToken && !localToken) {
-      localStorage.setItem('session_token', cookieToken);
-      console.log('ROOT TOKEN SYNC: Synced cookie token to localStorage');
+    // Sync tokens to localStorage if found in cookies but not in localStorage
+    if (cookieTokens.sessionToken && !sessionToken) {
+      localStorage.setItem('session_token', cookieTokens.sessionToken);
+      console.log('ROOT TOKEN SYNC: Synced session_token from cookie to localStorage');
     }
     
-    return finalToken;
+    if (cookieTokens.accessToken && !localAccessToken) {
+      localStorage.setItem('access_token', cookieTokens.accessToken);
+      console.log('ROOT TOKEN SYNC: Synced access_token from cookie to localStorage');
+    }
+    
+    return {
+      token: finalToken,
+      accessToken: finalAccessToken
+    };
   }, []);
 
   const getStoredUser = useCallback((): User | null => {
@@ -101,7 +104,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return null;
   }, []);
 
-  const validateWithBackend = useCallback(async (tokenToValidate?: string): Promise<{ token?: string; user?: User } | null> => {
+  const validateWithBackend = useCallback(async (tokenToValidate?: string): Promise<{ token?: string; access_token?: string; user?: User } | null> => {
     try {
       console.log('ROOT BACKEND VALIDATION: Attempting to validate session with backend...');
       
@@ -125,6 +128,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.log('ROOT BACKEND VALIDATION: Success, user found:', data.data.user.email);
           return {
             token: data.data.token,
+            access_token: data.data.access_token || data.data.token, // Fallback to token if access_token not present
             user: data.data.user
           };
         }
@@ -138,24 +142,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const storeAuthData = useCallback((authToken: string | null, userData: User) => {
+  const storeAuthData = useCallback((tokenData: { token?: string; access_token?: string } | null, userData: User) => {
     console.log('ROOT: Storing auth data for user:', userData.email);
 
-    setToken(authToken);
+    const sessionToken = tokenData?.token;
+    const accessTokenValue = tokenData?.access_token || tokenData?.token; // Fallback to token if access_token not present
+
+    setToken(sessionToken || null);
+    setAccessToken(accessTokenValue || null);
     setUser(userData);
     setIsAuthenticated(true);
 
+    // Store user data
     localStorage.setItem('user', JSON.stringify(userData));
     sessionStorage.setItem('user', JSON.stringify(userData));
 
-    if (authToken) {
-      localStorage.setItem('session_token', authToken);
-      console.log('ROOT: Token stored in localStorage');
+    // Store tokens
+    if (sessionToken) {
+      localStorage.setItem('session_token', sessionToken);
+      console.log('ROOT: Session token stored in localStorage');
+    }
 
+    if (accessTokenValue) {
+      localStorage.setItem('access_token', accessTokenValue);
+      console.log('ROOT: Access token stored in localStorage');
+
+      // Set cookies for both tokens
       const expires = new Date();
       expires.setDate(expires.getDate() + 7);
-      document.cookie = `session_token=${authToken}; expires=${expires.toUTCString()}; path=/; domain=.digikenya.co.ke; secure; samesite=lax`;
-      document.cookie = `access_token=${authToken}; expires=${expires.toUTCString()}; path=/; domain=.digikenya.co.ke; secure; samesite=lax`;
+      
+      document.cookie = `session_token=${accessTokenValue}; expires=${expires.toUTCString()}; path=/; domain=.digikenya.co.ke; secure; samesite=lax`;
+      document.cookie = `access_token=${accessTokenValue}; expires=${expires.toUTCString()}; path=/; domain=.digikenya.co.ke; secure; samesite=lax`;
     }
 
     console.log('ROOT: Auth data stored successfully');
@@ -165,28 +182,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     console.log('ROOT: Clearing all auth data');
 
     setToken(null);
+    setAccessToken(null);
     setUser(null);
     setIsAuthenticated(false);
 
+    // Clear localStorage
     localStorage.removeItem('user');
     localStorage.removeItem('session_token');
+    localStorage.removeItem('access_token');
     sessionStorage.removeItem('user');
 
-    document.cookie = 'session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.digikenya.co.ke';
-    document.cookie = 'access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.digikenya.co.ke';
-    document.cookie = 'session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=digikenya.co.ke';
-    document.cookie = 'access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=digikenya.co.ke';
+    // Clear cookies
+    const clearCookie = (name: string, domain: string) => {
+      document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${domain}`;
+    };
+
+    clearCookie('session_token', '.digikenya.co.ke');
+    clearCookie('access_token', '.digikenya.co.ke');
+    clearCookie('session_token', 'digikenya.co.ke');
+    clearCookie('access_token', 'digikenya.co.ke');
 
     console.log('ROOT: Auth data cleared');
   }, []);
 
   // Helper function to wait for token with retries
-  const waitForToken = useCallback(async (maxRetries: number = 5, delayMs: number = 200): Promise<string | undefined> => {
+  const waitForToken = useCallback(async (maxRetries: number = 5, delayMs: number = 200): Promise<{ token?: string; accessToken?: string } | null> => {
     for (let i = 0; i < maxRetries; i++) {
-      const token = getToken();
-      if (token) {
+      const tokens = getToken();
+      if (tokens.token || tokens.accessToken) {
         console.log(`ROOT TOKEN FOUND on attempt ${i + 1}`);
-        return token;
+        return tokens;
       }
       if (i < maxRetries - 1) {
         console.log(`ROOT TOKEN RETRY ${i + 1}/${maxRetries} - waiting ${delayMs}ms...`);
@@ -194,11 +219,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
     console.log(`ROOT TOKEN NOT FOUND after ${maxRetries} attempts`);
-    return undefined;
+    return null;
   }, [getToken]);
 
   const refreshToken = useCallback(async (): Promise<boolean> => {
-    const currentToken = getToken();
+    const tokens = getToken();
+    const currentToken = tokens.accessToken || tokens.token;
+    
     if (!currentToken) {
       console.log('ROOT: No token to refresh');
       return false;
@@ -206,7 +233,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       console.log('ROOT: Attempting token refresh...');
-      const response = await fetch(`${BASE_URL}/customer/auth/refresh-token`, {
+      const response = await fetch(`${BASE_URL}/customer/auth/verify-token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -217,9 +244,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (response.ok) {
         const data = await response.json();
-        if (data.success && data.data?.token && data.data?.user) {
+        if (data.success && data.data?.user) {
           console.log('ROOT: Token refreshed successfully');
-          storeAuthData(data.data.token, data.data.user);
+          storeAuthData({
+            token: data.data.token,
+            access_token: data.data.access_token || data.data.token
+          }, data.data.user);
           return true;
         }
       }
@@ -232,36 +262,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [getToken, storeAuthData]);
 
-  const login = useCallback(async (newToken: string | null, newUser: User, isCheckoutFlow: boolean = false) => {
+  const login = useCallback(async (
+    tokenData: string | { token?: string; access_token?: string } | null, 
+    newUser: User, 
+    isCheckoutFlow: boolean = false
+  ) => {
     console.log('ROOT LOGIN: User logging in:', newUser.email, { isCheckoutFlow });
-    console.log('ROOT LOGIN: Token provided:', newToken ? 'YES' : 'NO');
+    console.log('ROOT LOGIN: Token data provided:', tokenData ? 'YES' : 'NO');
 
     if (!newUser) {
       console.error('ROOT LOGIN: No user data provided for login');
       throw new Error('User data is missing');
     }
 
-    if (newToken && !isCheckoutFlow) {
+    // Normalize token data
+    let normalizedTokenData: { token?: string; access_token?: string } | null = null;
+    
+    if (typeof tokenData === 'string') {
+      // Legacy: single token string
+      normalizedTokenData = { token: tokenData, access_token: tokenData };
+    } else if (tokenData && typeof tokenData === 'object') {
+      // New: token object with separate fields
+      normalizedTokenData = tokenData;
+    }
+
+    if (normalizedTokenData && !isCheckoutFlow) {
       // Validate token if provided and not checkout flow
-      const validation = await validateWithBackend(newToken);
-      if (validation?.valid !== false) { // Allow if validation succeeds or fails due to network
-        storeAuthData(validation?.token || newToken, validation?.user || newUser);
+      const tokenToValidate = normalizedTokenData.access_token || normalizedTokenData.token;
+      const validation = await validateWithBackend(tokenToValidate);
+      
+      if (validation?.user) {
+        storeAuthData({
+          token: validation.token,
+          access_token: validation.access_token
+        }, validation.user);
       } else {
-        console.error('ROOT LOGIN: Provided token is invalid');
-        throw new Error('Invalid authentication token');
+        // If validation fails but we have token data, still try to store it
+        console.warn('ROOT LOGIN: Backend validation failed, but storing provided tokens');
+        storeAuthData(normalizedTokenData, newUser);
       }
     } else if (isCheckoutFlow) {
       // For checkout flow, allow login without token if user is verified
       if (newUser.is_email_verified && newUser.account_status === 'active') {
         console.log('ROOT LOGIN: Bypassing token validation for checkout flow with verified user');
-        storeAuthData(newToken, newUser);
+        storeAuthData(normalizedTokenData, newUser);
       } else {
         console.error('ROOT LOGIN: User not verified for checkout flow');
         throw new Error('User is not verified or account is not active');
       }
     } else {
       // No token provided, store user data and rely on cookies
-      storeAuthData(newToken, newUser);
+      storeAuthData(normalizedTokenData, newUser);
     }
 
     // Clean up URL if token was in URL
@@ -272,11 +323,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Verify token availability after a short delay
     setTimeout(() => {
-      const finalToken = getToken();
-      console.log('ROOT LOGIN: Final token verification:', finalToken ? 'SUCCESS' : 'FAILED');
+      const finalTokens = getToken();
+      console.log('ROOT LOGIN: Final token verification:', {
+        token: finalTokens.token ? 'SUCCESS' : 'FAILED',
+        accessToken: finalTokens.accessToken ? 'SUCCESS' : 'FAILED'
+      });
       
-      if (!finalToken) {
-        console.warn('ROOT LOGIN: No token found after login - this may cause issues on reload');
+      if (!finalTokens.token && !finalTokens.accessToken) {
+        console.warn('ROOT LOGIN: No tokens found after login - this may cause issues on reload');
       }
     }, 500);
   }, [storeAuthData, validateWithBackend, getToken]);
@@ -287,11 +341,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Only redirect if not already on auth callback page
     const shouldRedirect = !window.location.pathname.includes('/auth/callback');
     
-    if (token) {
+    const tokens = getToken();
+    const currentToken = tokens.accessToken || tokens.token;
+    
+    if (currentToken) {
       fetch(`${BASE_URL}/customer/auth/logout`, {
         method: 'POST',
         headers: { 
-          Authorization: `Bearer ${token}`, 
+          Authorization: `Bearer ${currentToken}`, 
           'Content-Type': 'application/json' 
         },
         credentials: 'include',
@@ -306,7 +363,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         window.location.href = '/signin';
       }, 100);
     }
-  }, [token, clearAuthData]);
+  }, [getToken, clearAuthData]);
 
   useEffect(() => {
     const initializeAuth = async () => {
@@ -318,52 +375,61 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.log('ROOT RELOAD: Checking stored data...');
         console.log('  - Stored user:', storedUser ? 'EXISTS' : 'MISSING');
         
-        // Step 2: If we have stored user data, try to get token with retries
-        let sessionToken: string | undefined;
+        // Step 2: If we have stored user data, try to get tokens with retries
+        let sessionTokens: { token?: string; accessToken?: string } | null = null;
         
         if (storedUser) {
-          // Try to get token with multiple attempts
-          sessionToken = await waitForToken(5, 300);
+          // Try to get tokens with multiple attempts
+          sessionTokens = await waitForToken(5, 300);
           
-          // If still no token, try backend validation as a last resort
-          if (!sessionToken) {
-            console.log('ROOT RELOAD: No token found after retries, trying backend validation...');
+          // If still no tokens, try backend validation as a last resort
+          if (!sessionTokens?.token && !sessionTokens?.accessToken) {
+            console.log('ROOT RELOAD: No tokens found after retries, trying backend validation...');
             const backendResult = await validateWithBackend();
-            if (backendResult?.token && backendResult?.user) {
-              sessionToken = backendResult.token;
-              storeAuthData(sessionToken, backendResult.user);
-              console.log('ROOT RELOAD: Backend validation successful, token and user updated');
+            if (backendResult?.user) {
+              storeAuthData({
+                token: backendResult.token,
+                access_token: backendResult.access_token
+              }, backendResult.user);
+              console.log('ROOT RELOAD: Backend validation successful, tokens and user updated');
               setIsLoading(false);
               return;
             }
           }
         }
 
-        // Step 3: If no stored user but we have a token, try to validate with backend
-        if (!storedUser && !sessionToken) {
-          console.log('ROOT RELOAD: No stored user, checking for token...');
-          sessionToken = await waitForToken(3, 200);
+        // Step 3: If no stored user but we have tokens, try to validate with backend
+        if (!storedUser && (!sessionTokens?.token && !sessionTokens?.accessToken)) {
+          console.log('ROOT RELOAD: No stored user, checking for tokens...');
+          sessionTokens = await waitForToken(3, 200);
         }
 
-        if (!storedUser && sessionToken) {
-          console.log('ROOT RELOAD: Found token but no stored user, trying backend validation...');
-          const backendResult = await validateWithBackend(sessionToken);
+        if (!storedUser && (sessionTokens?.token || sessionTokens?.accessToken)) {
+          console.log('ROOT RELOAD: Found tokens but no stored user, trying backend validation...');
+          const tokenToValidate = sessionTokens.accessToken || sessionTokens.token;
+          const backendResult = await validateWithBackend(tokenToValidate);
           if (backendResult?.user) {
-            storeAuthData(sessionToken, backendResult.user);
+            storeAuthData({
+              token: backendResult.token,
+              access_token: backendResult.access_token
+            }, backendResult.user);
             console.log('ROOT RELOAD: User restored from backend validation:', backendResult.user.email);
             setIsLoading(false);
             return;
           }
         }
 
-        // Step 4: Final validation - need both user data and token
-        if (!storedUser || !sessionToken) {
+        // Step 4: Final validation - need both user data and at least one token
+        if (!storedUser || (!sessionTokens?.token && !sessionTokens?.accessToken)) {
           // Instead of clearing immediately, give one more chance with backend validation
-          if (!storedUser && !sessionToken) {
-            console.log('ROOT RELOAD: No stored data and no token - trying final backend validation...');
+          if (!storedUser && (!sessionTokens?.token && !sessionTokens?.accessToken)) {
+            console.log('ROOT RELOAD: No stored data and no tokens - trying final backend validation...');
             const backendResult = await validateWithBackend();
-            if (backendResult?.token && backendResult?.user) {
-              storeAuthData(backendResult.token, backendResult.user);
+            if (backendResult?.user) {
+              storeAuthData({
+                token: backendResult.token,
+                access_token: backendResult.access_token
+              }, backendResult.user);
               console.log('ROOT RELOAD: Final backend validation successful');
               setIsLoading(false);
               return;
@@ -376,11 +442,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
 
-        // Step 5: We have both user and token - set auth state
+        // Step 5: We have both user and tokens - set auth state
         console.log('ROOT RELOAD: Valid stored user found:', storedUser.email);
         
         // Set auth state
-        setToken(sessionToken);
+        setToken(sessionTokens.token || null);
+        setAccessToken(sessionTokens.accessToken || null);
         setUser(storedUser);
         setIsAuthenticated(true);
         console.log('ROOT RELOAD: User authenticated successfully on reload');
@@ -405,8 +472,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const interval = setInterval(async () => {
         console.log('ROOT: Periodic token refresh check');
-        const currentToken = getToken();
-        if (currentToken) {
+        const tokens = getToken();
+        if (tokens.token || tokens.accessToken) {
           const refreshed = await refreshToken();
           if (!refreshed) {
             console.warn('ROOT: Token refresh failed, logging out');
@@ -424,6 +491,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const value: AuthContextType = {
     token,
+    accessToken,
     user,
     isAuthenticated,
     isLoading,
