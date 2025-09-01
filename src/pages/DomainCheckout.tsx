@@ -8,6 +8,16 @@ import { useAuth } from '@/context/AuthContext';
 const BASE_URL = 'https://api.digikenya.co.ke';
 const CONSOLE_URL = 'https://console.digikenya.co.ke';
 
+interface CheckoutState {
+  domain: string;
+  price: number;
+  renewal: number;
+  isQuickCheckout: boolean;
+  registrar?: string;
+  extension?: Record<string, any>;
+  returnUrl?: string;
+}
+
 export default function DomainCheckout() {
   const [paymentMethod, setPaymentMethod] = useState("mpesa");
   const [formData, setFormData] = useState({
@@ -23,41 +33,61 @@ export default function DomainCheckout() {
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStep, setProcessingStep] = useState("");
-  const [errors, setErrors] = useState({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, token, isAuthenticated, isLoading } = useAuth();
+  const { user, token, isAuthenticated, isLoading, refreshToken } = useAuth();
 
   // Initialize checkout state from location.state or sessionStorage
-  const [checkoutState, setCheckoutState] = useState(() => {
+  const [checkoutState, setCheckoutState] = useState<CheckoutState>(() => {
     console.log('DomainCheckout: Initializing checkout state');
-    // First, try to get data from location.state
-    if (location.state) {
-      console.log('DomainCheckout: Using location.state:', location.state);
-      return location.state;
-    }
-    // Fallback to sessionStorage
-    const pendingCheckout = sessionStorage.getItem('pendingCheckout');
-    if (pendingCheckout) {
-      try {
-        const parsedData = JSON.parse(pendingCheckout);
-        console.log('DomainCheckout: Restored checkout state from sessionStorage:', parsedData);
-        // Clean up sessionStorage immediately to prevent reuse
-        sessionStorage.removeItem('pendingCheckout');
-        return parsedData;
-      } catch (error) {
-        console.error('DomainCheckout: Error parsing pendingCheckout:', error);
-      }
-    }
-    // Default values if neither is available
-    console.log('DomainCheckout: Falling back to default checkout state');
-    return {
+    const defaultState: CheckoutState = {
       domain: "myawesomebrand.co.ke",
       price: 1200,
       renewal: 1200,
       isQuickCheckout: false,
     };
+
+    // Try to get data from location.state
+    if (location.state) {
+      console.log('DomainCheckout: Using location.state:', JSON.stringify(location.state, null, 2));
+      const state = location.state as Partial<CheckoutState>;
+      // Validate and merge with default state
+      if (state.domain) {
+        return {
+          ...defaultState,
+          ...state,
+          price: state.price ?? defaultState.price,
+          renewal: state.renewal ?? defaultState.renewal,
+          isQuickCheckout: state.isQuickCheckout ?? defaultState.isQuickCheckout,
+        };
+      }
+    }
+
+    // Fallback to sessionStorage
+    const pendingCheckout = sessionStorage.getItem('pendingCheckout');
+    if (pendingCheckout) {
+      try {
+        const parsedData = JSON.parse(pendingCheckout) as Partial<CheckoutState>;
+        console.log('DomainCheckout: Restored checkout state from sessionStorage:', JSON.stringify(parsedData, null, 2));
+        sessionStorage.removeItem('pendingCheckout');
+        if (parsedData.domain) {
+          return {
+            ...defaultState,
+            ...parsedData,
+            price: parsedData.price ?? defaultState.price,
+            renewal: parsedData.renewal ?? defaultState.renewal,
+            isQuickCheckout: parsedData.isQuickCheckout ?? defaultState.isQuickCheckout,
+          };
+        }
+      } catch (error) {
+        console.error('DomainCheckout: Error parsing pendingCheckout:', error);
+      }
+    }
+
+    console.log('DomainCheckout: Falling back to default checkout state');
+    return defaultState;
   });
 
   const { 
@@ -75,15 +105,14 @@ export default function DomainCheckout() {
 
   // Log the initialized checkout state
   useEffect(() => {
-    console.log('DomainCheckout: Initialized checkout state:', checkoutState);
+    console.log('DomainCheckout: Initialized checkout state:', JSON.stringify(checkoutState, null, 2));
   }, [checkoutState]);
 
   // Check authentication status and redirect if needed
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       console.log('DomainCheckout: User not authenticated, redirecting to signin');
-      // Store the current checkout data in sessionStorage for after login
-      const checkoutData = {
+      const checkoutData: CheckoutState = {
         domain,
         price,
         renewal,
@@ -92,10 +121,9 @@ export default function DomainCheckout() {
         extension,
         returnUrl: window.location.pathname + window.location.search
       };
-      console.log('DomainCheckout: Storing checkout data in sessionStorage:', checkoutData);
+      console.log('DomainCheckout: Storing checkout data in sessionStorage:', JSON.stringify(checkoutData, null, 2));
       sessionStorage.setItem('pendingCheckout', JSON.stringify(checkoutData));
       
-      // Redirect to signin with a return parameter
       navigate('/signin?return=checkout&domain=' + encodeURIComponent(domain));
     }
   }, [isAuthenticated, isLoading, navigate, domain, price, renewal, isQuickCheckout, registrar, extension]);
@@ -103,7 +131,7 @@ export default function DomainCheckout() {
   // Pre-fill form with user data when authenticated
   useEffect(() => {
     if (isAuthenticated && user) {
-      console.log('DomainCheckout: Pre-filling form with user data:', user);
+      console.log('DomainCheckout: Pre-filling form with user data:', JSON.stringify(user, null, 2));
       setFormData(prev => ({
         ...prev,
         fullName: user.name || "",
@@ -122,7 +150,6 @@ export default function DomainCheckout() {
       [name]: value
     }));
     
-    // Clear field-specific error
     if (errors[name]) {
       setErrors(prev => ({
         ...prev,
@@ -132,7 +159,7 @@ export default function DomainCheckout() {
   };
 
   const validateForm = () => {
-    const newErrors = {};
+    const newErrors: Record<string, string> = {};
     
     if (!formData.fullName.trim()) {
       newErrors.fullName = 'Full name is required';
@@ -171,7 +198,7 @@ export default function DomainCheckout() {
   const splitFullName = (fullName: string) => {
     const nameParts = fullName.trim().split(' ');
     const firstName = nameParts[0] || '';
-    const lastName = nameParts.slice(1).join(' ') || firstName; // Use first name as last name if only one name provided
+    const lastName = nameParts.slice(1).join(' ') || firstName;
     return { firstName, lastName };
   };
 
@@ -190,7 +217,7 @@ export default function DomainCheckout() {
       privacy_protection: false,
       dns_management: true,
       email_forwarding: false,
-      nameservers: [], // Will use default nameservers
+      nameservers: [],
       contacts: {
         registrant: {
           first_name: firstName,
@@ -234,14 +261,22 @@ export default function DomainCheckout() {
       }
     };
 
-    console.log('DomainCheckout: Sending domain registration request:', registrationData);
+    console.log('DomainCheckout: Sending domain registration request:', JSON.stringify(registrationData, null, 2));
 
     try {
+      // Attempt to refresh token before making the request
+      console.log('DomainCheckout: Attempting token refresh before registration');
+      const refreshed = await refreshToken();
+      const authToken = refreshed ? getToken() : token;
+      if (!authToken) {
+        throw new Error('Failed to obtain a valid authentication token.');
+      }
+
       const response = await fetch(`${BASE_URL}/api/v1/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${authToken}`,
         },
         credentials: 'include',
         body: JSON.stringify(registrationData),
@@ -250,11 +285,11 @@ export default function DomainCheckout() {
       const result = await response.json();
       
       if (!response.ok) {
-        console.error('DomainCheckout: Registration failed:', result);
+        console.error('DomainCheckout: Registration failed:', JSON.stringify(result, null, 2));
         throw new Error(result.detail || `Registration failed with status: ${response.status}`);
       }
 
-      console.log('DomainCheckout: Registration response:', result);
+      console.log('DomainCheckout: Registration response:', JSON.stringify(result, null, 2));
       return result;
     } catch (error) {
       console.error('DomainCheckout: Registration error:', error);
@@ -266,7 +301,7 @@ export default function DomainCheckout() {
     e.preventDefault();
     
     if (!validateForm()) {
-      console.log('DomainCheckout: Form validation failed:', errors);
+      console.log('DomainCheckout: Form validation failed:', JSON.stringify(errors, null, 2));
       return;
     }
 
@@ -281,12 +316,10 @@ export default function DomainCheckout() {
     setErrors({});
 
     try {
-      // Step 1: Process Payment (Mock for now)
       setProcessingStep("Processing payment...");
       await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate payment processing
       console.log('DomainCheckout: Payment processing completed');
 
-      // Step 2: Register Domain
       setProcessingStep("Registering domain...");
       const registrationResult = await registerDomain();
       
@@ -294,19 +327,16 @@ export default function DomainCheckout() {
         throw new Error(registrationResult.message || 'Domain registration failed');
       }
 
-      // Step 3: Success - redirect to console
       setProcessingStep("Registration complete! Redirecting...");
       console.log('DomainCheckout: Registration successful, redirecting to console');
       
-      // Clear any cached data
       sessionStorage.removeItem('pendingCheckout');
       
-      // Redirect to console domains page
       setTimeout(() => {
         window.location.href = `${CONSOLE_URL}/domains?new=${encodeURIComponent(domain)}`;
       }, 2000);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('DomainCheckout: Checkout error:', error);
       setErrors({ 
         api: error.message || 'An error occurred during registration. Please try again or contact support.' 
