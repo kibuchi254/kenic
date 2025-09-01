@@ -39,21 +39,24 @@ export default function DomainCheckout() {
   const navigate = useNavigate();
   const { user, token, isAuthenticated, isLoading, refreshToken } = useAuth();
 
-  // Initialize checkout state from location.state or sessionStorage
+  // Get domain from URL parameters as fallback
+  const urlParams = new URLSearchParams(location.search);
+  const urlDomain = urlParams.get('domain') || 'myawesomebrand.co.ke';
+
+  // Initialize checkout state
   const [checkoutState, setCheckoutState] = useState<CheckoutState>(() => {
     console.log('DomainCheckout: Initializing checkout state');
     const defaultState: CheckoutState = {
-      domain: "myawesomebrand.co.ke",
+      domain: urlDomain,
       price: 1200,
       renewal: 1200,
       isQuickCheckout: false,
     };
 
-    // Try to get data from location.state
+    // Try location.state
     if (location.state) {
       console.log('DomainCheckout: Using location.state:', JSON.stringify(location.state, null, 2));
       const state = location.state as Partial<CheckoutState>;
-      // Validate and merge with default state
       if (state.domain) {
         return {
           ...defaultState,
@@ -65,7 +68,7 @@ export default function DomainCheckout() {
       }
     }
 
-    // Fallback to sessionStorage
+    // Try sessionStorage
     const pendingCheckout = sessionStorage.getItem('pendingCheckout');
     if (pendingCheckout) {
       try {
@@ -86,7 +89,8 @@ export default function DomainCheckout() {
       }
     }
 
-    console.log('DomainCheckout: Falling back to default checkout state');
+    // Fallback to default with URL domain
+    console.log('DomainCheckout: Falling back to default checkout state with URL domain:', urlDomain);
     return defaultState;
   });
 
@@ -103,12 +107,10 @@ export default function DomainCheckout() {
   const tax = Math.round(price * taxRate);
   const total = price + tax;
 
-  // Log the initialized checkout state
   useEffect(() => {
     console.log('DomainCheckout: Initialized checkout state:', JSON.stringify(checkoutState, null, 2));
   }, [checkoutState]);
 
-  // Check authentication status and redirect if needed
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       console.log('DomainCheckout: User not authenticated, redirecting to signin');
@@ -128,7 +130,6 @@ export default function DomainCheckout() {
     }
   }, [isAuthenticated, isLoading, navigate, domain, price, renewal, isQuickCheckout, registrar, extension]);
 
-  // Pre-fill form with user data when authenticated
   useEffect(() => {
     if (isAuthenticated && user) {
       console.log('DomainCheckout: Pre-filling form with user data:', JSON.stringify(user, null, 2));
@@ -161,35 +162,17 @@ export default function DomainCheckout() {
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
     
-    if (!formData.fullName.trim()) {
-      newErrors.fullName = 'Full name is required';
-    }
-    
+    if (!formData.fullName.trim()) newErrors.fullName = 'Full name is required';
     if (!formData.email.trim()) {
       newErrors.email = 'Email is required';
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
       newErrors.email = 'Please enter a valid email address';
     }
-    
-    if (!formData.phone.trim()) {
-      newErrors.phone = 'Phone number is required';
-    }
-    
-    if (!formData.address.trim()) {
-      newErrors.address = 'Address is required';
-    }
-    
-    if (!formData.city.trim()) {
-      newErrors.city = 'City is required';
-    }
-    
-    if (!formData.state.trim()) {
-      newErrors.state = 'State/Province is required';
-    }
-    
-    if (!formData.postalCode.trim()) {
-      newErrors.postalCode = 'Postal code is required';
-    }
+    if (!formData.phone.trim()) newErrors.phone = 'Phone number is required';
+    if (!formData.address.trim()) newErrors.address = 'Address is required';
+    if (!formData.city.trim()) newErrors.city = 'City is required';
+    if (!formData.state.trim()) newErrors.state = 'State/Province is required';
+    if (!formData.postalCode.trim()) newErrors.postalCode = 'Postal code is required';
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -203,15 +186,21 @@ export default function DomainCheckout() {
   };
 
   const registerDomain = async () => {
-    if (!token) {
-      console.error('DomainCheckout: No authentication token available');
-      throw new Error('Authentication token is missing. Please sign in again.');
+    let authToken = token;
+    if (!authToken) {
+      console.log('DomainCheckout: No token, attempting refresh');
+      const refreshed = await refreshToken();
+      authToken = refreshed ? useAuth().token : null;
+      if (!authToken) {
+        console.error('DomainCheckout: No authentication token available after refresh');
+        throw new Error('Authentication token is missing. Please sign in again.');
+      }
     }
 
     const { firstName, lastName } = splitFullName(formData.fullName);
     
     const registrationData = {
-      domain: domain,
+      domain,
       years: 1,
       auto_renew: true,
       privacy_protection: false,
@@ -264,14 +253,6 @@ export default function DomainCheckout() {
     console.log('DomainCheckout: Sending domain registration request:', JSON.stringify(registrationData, null, 2));
 
     try {
-      // Attempt to refresh token before making the request
-      console.log('DomainCheckout: Attempting token refresh before registration');
-      const refreshed = await refreshToken();
-      const authToken = refreshed ? getToken() : token;
-      if (!authToken) {
-        throw new Error('Failed to obtain a valid authentication token.');
-      }
-
       const response = await fetch(`${BASE_URL}/api/v1/register`, {
         method: 'POST',
         headers: {
@@ -305,11 +286,22 @@ export default function DomainCheckout() {
       return;
     }
 
-    if (!isAuthenticated || !token) {
-      console.error('DomainCheckout: User not authenticated or token missing');
+    if (!isAuthenticated) {
+      console.error('DomainCheckout: User not authenticated');
       setErrors({ api: 'Please sign in to complete the registration.' });
       navigate('/signin?return=checkout&domain=' + encodeURIComponent(domain));
       return;
+    }
+
+    if (!token) {
+      console.log('DomainCheckout: No token, attempting refresh before checkout');
+      const refreshed = await refreshToken();
+      if (!refreshed || !useAuth().token) {
+        console.error('DomainCheckout: User not authenticated or token missing after refresh');
+        setErrors({ api: 'Authentication failed. Please sign in again.' });
+        navigate('/signin?return=checkout&domain=' + encodeURIComponent(domain));
+        return;
+      }
     }
 
     setIsProcessing(true);
@@ -346,7 +338,6 @@ export default function DomainCheckout() {
     }
   };
 
-  // Show loading state while checking authentication
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -358,7 +349,6 @@ export default function DomainCheckout() {
     );
   }
 
-  // Show processing overlay
   if (isProcessing) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -400,7 +390,6 @@ export default function DomainCheckout() {
     );
   }
 
-  // Don't render the form if not authenticated (will redirect)
   if (!isAuthenticated) {
     return null;
   }
@@ -408,7 +397,6 @@ export default function DomainCheckout() {
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
         <div className="mb-8">
           <button
             onClick={() => navigate(-1)}
@@ -427,9 +415,7 @@ export default function DomainCheckout() {
         </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
-          {/* Left Column - Forms */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Domain Summary */}
             <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-200">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-2xl font-bold flex items-center gap-3 text-green-600">
@@ -478,7 +464,6 @@ export default function DomainCheckout() {
               </div>
             </div>
 
-            {/* Contact Information Form */}
             <form onSubmit={handleCheckout} className="bg-white rounded-2xl shadow-sm p-6 border border-gray-200">
               <h2 className="text-xl font-bold text-green-600 mb-6">Registrant Contact Information</h2>
               
@@ -653,7 +638,6 @@ export default function DomainCheckout() {
                 </div>
               </div>
 
-              {/* Payment Method Selection */}
               <h2 className="text-xl font-bold text-green-600 mb-4">Payment Method</h2>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
                 <button
@@ -699,7 +683,6 @@ export default function DomainCheckout() {
                 </button>
               </div>
 
-              {/* Terms and Submit */}
               <div className="mb-6">
                 <label className="flex items-start space-x-2">
                   <input type="checkbox" required className="mt-1 text-green-600" />
@@ -727,9 +710,7 @@ export default function DomainCheckout() {
             </form>
           </div>
 
-          {/* Right Column - Order Summary & Security */}
           <div className="space-y-6">
-            {/* Order Summary */}
             <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-200 sticky top-4">
               <h2 className="text-xl font-bold text-green-600 mb-4">Order Summary</h2>
               
@@ -757,7 +738,6 @@ export default function DomainCheckout() {
               </div>
             </div>
 
-            {/* Security Badge */}
             <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-200">
               <h3 className="font-bold text-gray-900 mb-4 flex items-center">
                 <MdSecurity className="w-5 h-5 text-green-600 mr-2" />
@@ -783,7 +763,6 @@ export default function DomainCheckout() {
               </div>
             </div>
 
-            {/* Support Info */}
             <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-200">
               <h3 className="font-bold text-gray-900 mb-4 flex items-center">
                 <MdSupport className="w-5 h-5 text-green-600 mr-2" />
@@ -807,7 +786,6 @@ export default function DomainCheckout() {
           </div>
         </div>
 
-        {/* Trust Indicators */}
         <div className="mt-12 bg-white rounded-2xl shadow-sm p-6 border border-gray-200">
           <div className="text-center mb-6">
             <h3 className="text-xl font-bold text-gray-900 mb-2">Why Choose Our Domain Registration?</h3>
