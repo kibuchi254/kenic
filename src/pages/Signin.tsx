@@ -365,9 +365,11 @@ const Signin = () => {
     // Handle post-login redirection
     if (isCheckoutReturn) {
       // Redirect back to checkout page
+      console.log('Signin: Redirecting to /domain-checkout');
       navigate('/domain-checkout');
     } else {
       // Redirect to console for normal login
+      console.log('Signin: Redirecting to console dashboard');
       window.location.href = `${CONSOLE_URL}/dashboard`;
     }
   };
@@ -384,32 +386,17 @@ const Signin = () => {
       console.log('Login response:', response);
 
       if (response.success && response.data) {
-        if (isCheckoutReturn) {
-          // For checkout returns, handle auth directly here
-          const { token, user } = response.data;
-          if (token && user) {
-            handleAuthSuccess(token, user);
-            return;
-          }
-        }
+        const { token, user, redirect_url } = response.data;
         
-        if (isCheckoutReturn) {
-          // For checkout returns, handle auth directly here
-          const { token, user } = response.data;
-          if (token && user) {
-            handleAuthSuccess(token, user);
-            return;
-          }
-        }
-        
-        const { redirect_url } = response.data;
-        
-        if (redirect_url) {
-          // For normal flow, redirect to the secure callback URL with temporary code
+        if (token && user) {
+          // Direct auth success (preferred for checkout flow)
+          handleAuthSuccess(token, user);
+        } else if (redirect_url) {
+          // Fallback to server-provided redirect URL
           console.log('Redirecting to:', redirect_url);
           window.location.href = redirect_url;
         } else {
-          throw new ApiError('No redirect URL received from server');
+          throw new ApiError('No token or redirect URL received from server');
         }
       } else {
         throw new ApiError(response.message || 'Login failed');
@@ -468,32 +455,17 @@ const Signin = () => {
       console.log('Verify email response:', response);
 
       if (response.success && response.data) {
-        if (isCheckoutReturn) {
-          // For checkout returns, handle auth directly here
-          const { token, user } = response.data;
-          if (token && user) {
-            handleAuthSuccess(token, user);
-            return;
-          }
-        }
+        const { token, user, redirect_url } = response.data;
         
-        if (isCheckoutReturn) {
-          // For checkout returns, handle auth directly here
-          const { token, user } = response.data;
-          if (token && user) {
-            handleAuthSuccess(token, user);
-            return;
-          }
-        }
-        
-        const { redirect_url } = response.data;
-        
-        if (redirect_url) {
-          // For normal flow, redirect to the secure callback URL with temporary code
+        if (token && user) {
+          // Direct auth success (preferred for checkout flow)
+          handleAuthSuccess(token, user);
+        } else if (redirect_url) {
+          // Fallback to server-provided redirect URL
           console.log('Redirecting to:', redirect_url);
           window.location.href = redirect_url;
         } else {
-          throw new ApiError('No redirect URL received after verification');
+          throw new ApiError('No token or redirect URL received after verification');
         }
       } else {
         throw new ApiError(response.message || 'Email verification failed');
@@ -553,32 +525,17 @@ const Signin = () => {
       console.log('Google auth response:', apiResponse);
 
       if (apiResponse.success && apiResponse.data) {
-        if (isCheckoutReturn) {
-          // For checkout returns, handle auth directly here
-          const { token, user } = apiResponse.data;
-          if (token && user) {
-            handleAuthSuccess(token, user);
-            return;
-          }
-        }
+        const { token, user, redirect_url } = apiResponse.data;
         
-        if (isCheckoutReturn) {
-          // For checkout returns, handle auth directly here
-          const { token, user } = apiResponse.data;
-          if (token && user) {
-            handleAuthSuccess(token, user);
-            return;
-          }
-        }
-        
-        const { redirect_url } = apiResponse.data;
-        
-        if (redirect_url) {
-          // For normal flow, redirect to the secure callback URL with temporary code
+        if (token && user) {
+          // Direct auth success (preferred for checkout flow)
+          handleAuthSuccess(token, user);
+        } else if (redirect_url) {
+          // Fallback to server-provided redirect URL
           console.log('Google auth redirecting to:', redirect_url);
           window.location.href = redirect_url;
         } else {
-          throw new ApiError('No redirect URL received from Google authentication');
+          throw new ApiError('No token or redirect URL received from Google authentication');
         }
       } else {
         throw new ApiError(apiResponse.message || 'Google authentication failed');
