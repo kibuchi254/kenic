@@ -1,3 +1,5 @@
+// Updated DomainCheckout Component
+
 import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { FaMoneyBill, FaCreditCard, FaPaypal } from "react-icons/fa";
@@ -166,12 +168,11 @@ const DomainCheckout: React.FC = () => {
   };
 
   const getAuthToken = (): string | null => {
-    // Prioritize accessToken, fallback to token
     const authToken = accessToken || token;
     console.log('DomainCheckout: Getting auth token:', {
       accessToken: accessToken ? 'EXISTS' : 'MISSING',
       token: token ? 'EXISTS' : 'MISSING',
-      final: authToken ? 'FOUND' : 'NOT_FOUND'
+      final: authToken ? 'FOUND' : 'NOT_FOUND',
     });
     return authToken;
   };
@@ -195,12 +196,10 @@ const DomainCheckout: React.FC = () => {
   };
 
   const registerDomain = async (): Promise<any> => {
-    console.log('DomainCheckout: Starting domain registration with fallback auth methods');
+    console.log('DomainCheckout: Starting domain registration');
     debugAuthHeaders();
 
-    // Get form data
     const { firstName, lastName } = splitFullName(formData.fullName);
-    
     const registrationData = {
       domain,
       years: 1,
@@ -215,13 +214,13 @@ const DomainCheckout: React.FC = () => {
           last_name: lastName,
           email: formData.email,
           phone: formData.phone,
-          organization: formData.organization || "",
+          organization: formData.organization || '',
           address1: formData.address,
-          address2: "",
+          address2: '',
           city: formData.city,
           state: formData.state,
           postal_code: formData.postalCode,
-          country: formData.country
+          country: formData.country,
         },
         admin: {
           first_name: firstName,
@@ -252,176 +251,60 @@ const DomainCheckout: React.FC = () => {
       }
     };
 
-    console.log('DomainCheckout: Registration data prepared');
-
-    // Method 1: Try with stored tokens
     const authToken = getAuthToken();
-    if (authToken) {
-      console.log('DomainCheckout: Attempting registration with stored token');
-      try {
-        const response = await fetch(`${BASE_URL}/api/v1/register`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`,
-          },
-          credentials: 'include',
-          body: JSON.stringify(registrationData),
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          console.log('DomainCheckout: Registration successful with stored token');
-          return result;
-        } else {
-          console.log('DomainCheckout: Stored token failed, trying cookie-based auth');
-        }
-      } catch (error) {
-        console.log('DomainCheckout: Stored token request failed, trying cookie-based auth');
-      }
+    if (!authToken) {
+      console.error('DomainCheckout: No auth token available');
+      throw new Error('Authentication token missing. Please sign in again.');
     }
 
-    // Method 2: Try with cookie-based authentication (no Authorization header)
-    console.log('DomainCheckout: Attempting registration with cookie authentication');
     try {
+      console.log('DomainCheckout: Attempting registration with token');
       const response = await fetch(`${BASE_URL}/api/v1/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // No Authorization header - rely on cookies
+          Authorization: `Bearer ${authToken}`,
         },
-        credentials: 'include', // This sends cookies
+        credentials: 'include',
         body: JSON.stringify(registrationData),
       });
 
       const result = await response.json();
-
       if (response.ok && result.success) {
-        console.log('DomainCheckout: Registration successful with cookie authentication');
+        console.log('DomainCheckout: Registration successful');
         return result;
       } else {
-        console.log('DomainCheckout: Cookie auth failed:', result);
+        console.log('DomainCheckout: Registration failed:', result.message);
+        throw new Error(result.message || 'Domain registration failed');
       }
-    } catch (error) {
-      console.log('DomainCheckout: Cookie auth request failed:', error);
-    }
-
-    // Method 3: Try to get a fresh token using the auth code
-    const storedAuthCode = sessionStorage.getItem('auth_code');
-    if (storedAuthCode) {
-      console.log('DomainCheckout: Attempting fresh token exchange');
-      try {
-        const tokenResponse = await fetch(`${BASE_URL}/customer/auth/exchange-code/${storedAuthCode}`, {
-          method: 'GET',
-          credentials: 'include',
-        });
-
-        if (tokenResponse.ok) {
-          const tokenData = await tokenResponse.json();
-          if (tokenData.success && tokenData.data?.access_token) {
-            console.log('DomainCheckout: Fresh token obtained, retrying registration');
-            
-            // Store the fresh token
-            localStorage.setItem('access_token', tokenData.data.access_token);
-            if (tokenData.data.token) {
-              localStorage.setItem('session_token', tokenData.data.token);
-            }
-
-            // Retry with fresh token
-            const response = await fetch(`${BASE_URL}/api/v1/register`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${tokenData.data.access_token}`,
-              },
-              credentials: 'include',
-              body: JSON.stringify(registrationData),
-            });
-
-            const result = await response.json();
-            if (response.ok && result.success) {
-              console.log('DomainCheckout: Registration successful with fresh token');
-              return result;
-            }
-          }
+    } catch (error: any) {
+      console.log('DomainCheckout: Token-based registration failed:', error.message);
+      // Attempt token refresh
+      console.log('DomainCheckout: Attempting token refresh');
+      const refreshed = await refreshToken();
+      if (refreshed) {
+        console.log('DomainCheckout: Token refreshed, retrying registration');
+        const authToken = getAuthToken();
+        if (!authToken) {
+          throw new Error('Authentication token missing after refresh');
         }
-      } catch (error) {
-        console.log('DomainCheckout: Fresh token exchange failed:', error);
-      }
-    }
-
-    // Method 4: Try to get user session and token from /me endpoint
-    console.log('DomainCheckout: Attempting session recovery via /me endpoint');
-    try {
-      const meResponse = await fetch(`${BASE_URL}/customer/auth/me`, {
-        method: 'GET',
-        credentials: 'include', // Use cookies
-      });
-
-      if (meResponse.ok) {
-        const meData = await meResponse.json();
-        if (meData.success && meData.data?.access_token) {
-          console.log('DomainCheckout: Session recovered, retrying registration');
-          
-          // Store the recovered token
-          localStorage.setItem('access_token', meData.data.access_token);
-
-          const response = await fetch(`${BASE_URL}/api/v1/register`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${meData.data.access_token}`,
-            },
-            credentials: 'include',
-            body: JSON.stringify(registrationData),
-          });
-
-          const result = await response.json();
-          if (response.ok && result.success) {
-            console.log('DomainCheckout: Registration successful with recovered session');
-            return result;
-          }
-        }
-      }
-    } catch (error) {
-      console.log('DomainCheckout: Session recovery failed:', error);
-    }
-
-    // Method 5: Direct API call with user credentials (if available)
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      try {
-        const user = JSON.parse(storedUser);
-        console.log('DomainCheckout: Attempting direct registration with user session');
-        
-        // Try a different approach - use the customer ID in the request
-        const directRegistrationData = {
-          ...registrationData,
-          customer_id: user.id, // Add customer ID to the request
-        };
-
         const response = await fetch(`${BASE_URL}/api/v1/register`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
           },
           credentials: 'include',
-          body: JSON.stringify(directRegistrationData),
+          body: JSON.stringify(registrationData),
         });
-
         const result = await response.json();
         if (response.ok && result.success) {
-          console.log('DomainCheckout: Registration successful with direct approach');
+          console.log('DomainCheckout: Registration successful after token refresh');
           return result;
         }
-      } catch (error) {
-        console.log('DomainCheckout: Direct registration failed:', error);
       }
+      throw new Error(error.message || 'Authentication failed. Please sign in again.');
     }
-
-    // If all methods fail, throw an authentication error
-    console.error('DomainCheckout: All authentication methods failed');
-    throw new Error('Authentication failed. Please sign in again.');
   };
 
   const handleCheckout = async (e: React.FormEvent): Promise<void> => {
@@ -466,18 +349,15 @@ const DomainCheckout: React.FC = () => {
     } catch (error: any) {
       console.error('DomainCheckout: Checkout error:', error);
       
-      // Provide more specific error messages
       let errorMessage = 'An error occurred during registration. Please try again or contact support.';
       
       if (error.message.includes('Authentication')) {
         errorMessage = 'Authentication failed. Please sign in again.';
-        // Clear auth state and redirect to signin
         setTimeout(() => {
           navigate('/signin?return=checkout&domain=' + encodeURIComponent(domain));
         }, 2000);
       } else if (error.message.includes('Invalid authentication credentials')) {
         errorMessage = 'Your session has expired. Please sign in again.';
-        // Clear auth state and redirect to signin
         setTimeout(() => {
           navigate('/signin?return=checkout&domain=' + encodeURIComponent(domain));
         }, 2000);
@@ -635,6 +515,110 @@ const DomainCheckout: React.FC = () => {
                     type="text"
                     name="fullName"
                     value={formData.fullName}
+                    onChange={handleInputChange}
+                    placeholder="John Doe"
+                    required
+                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
+                      errors.fullName ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
+                  />
+                  {errors.fullName && <p className="text-red-600 text-sm mt-1">{errors.fullName}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Email <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    placeholder="john@example.com"
+                    required
+                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
+                      errors.email ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
+                  />
+                  {errors.email && <p className="text-red-600 text-sm mt-1">{errors.email}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Phone <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="tel"
+                    name="phone"
+                    value={formData.phone}
+                    onChange={handleInputChange}
+                    placeholder="+254700000000"
+                    required
+                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
+                      errors.phone ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
+                  />
+                  {errors.phone && <p className="text-red-600 text-sm mt-1">{errors.phone}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Organization
+                  </label>
+                  <input
+                    type="text"
+                    name="organization"
+                    value={formData.organization}
+                    onChange={handleInputChange}
+                    placeholder="My Company"
+                    className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Address <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="address"
+                    value={formData.address}
+                    onChange={handleInputChange}
+                    placeholder="123 Main St"
+                    required
+                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
+                      errors.address ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
+                  />
+                  {errors.address && <p className="text-red-600 text-sm mt-1">{errors.address}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    City <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="city"
+                    value={formData.city}
+                    onChange={handleInputChange}
+                    placeholder="Nairobi"
+                    required
+                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
+                      errors.city ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
+                  />
+                  {errors.city && <p className="text-red-600 text-sm mt-1">{errors.city}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    State/Province <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="state"
+                    value={formData.state}
                     onChange={handleInputChange}
                     placeholder="Nairobi"
                     required
@@ -872,4 +856,4 @@ const DomainCheckout: React.FC = () => {
   );
 };
 
-export default DomainCheckout
+export default DomainCheckout;

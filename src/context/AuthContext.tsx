@@ -1,3 +1,5 @@
+// Updated AuthContext
+
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
 interface User {
@@ -38,58 +40,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
 
   const getToken = useCallback((): { token?: string; accessToken?: string } => {
-    // Check localStorage for both token types
     const sessionToken = localStorage.getItem('session_token');
     const localAccessToken = localStorage.getItem('access_token');
-    
-    // Enhanced cookie checking with multiple methods
+
     const getCookieTokens = (): { sessionToken?: string; accessToken?: string } => {
-      const cookies = document.cookie.split(';');
-      let sessionToken: string | undefined;
-      let accessToken: string | undefined;
-      
-      for (let cookie of cookies) {
-        const trimmedCookie = cookie.trim();
-        if (trimmedCookie.startsWith('session_token=')) {
-          sessionToken = trimmedCookie.substring('session_token='.length);
-        } else if (trimmedCookie.startsWith('access_token=')) {
-          accessToken = trimmedCookie.substring('access_token='.length);
+      const cookies = document.cookie.split(';').reduce((acc, cookie) => {
+        const [name, value] = cookie.trim().split('=');
+        if (name === 'session_token' || name === 'access_token') {
+          acc[name] = value;
         }
-      }
-      
-      return { sessionToken, accessToken };
+        return acc;
+      }, {} as Record<string, string>);
+      return { sessionToken: cookies.session_token, accessToken: cookies.access_token };
     };
-    
+
     const cookieTokens = getCookieTokens();
-    
-    // Prioritize access_token if available, fallback to session_token
+
+    // Synchronize tokens
+    if (cookieTokens.sessionToken && !sessionToken) {
+      localStorage.setItem('session_token', cookieTokens.sessionToken);
+      console.log('ROOT TOKEN SYNC: Synced session_token from cookie to localStorage');
+    }
+    if (cookieTokens.accessToken && !localAccessToken) {
+      localStorage.setItem('access_token', cookieTokens.accessToken);
+      console.log('ROOT TOKEN SYNC: Synced access_token from cookie to localStorage');
+    }
+    if (sessionToken && !cookieTokens.sessionToken) {
+      const expires = new Date();
+      expires.setDate(expires.getDate() + 7);
+      document.cookie = `session_token=${sessionToken}; expires=${expires.toUTCString()}; path=/; domain=.digikenya.co.ke; secure; samesite=lax`;
+      console.log('ROOT TOKEN SYNC: Synced session_token from localStorage to cookie');
+    }
+    if (localAccessToken && !cookieTokens.accessToken) {
+      const expires = new Date();
+      expires.setDate(expires.getDate() + 7);
+      document.cookie = `access_token=${localAccessToken}; expires=${expires.toUTCString()}; path=/; domain=.digikenya.co.ke; secure; samesite=lax`;
+      console.log('ROOT TOKEN SYNC: Synced access_token from localStorage to cookie');
+    }
+
     const finalToken = sessionToken || cookieTokens.sessionToken;
     const finalAccessToken = localAccessToken || cookieTokens.accessToken || finalToken;
-    
+
     console.log('ROOT TOKEN CHECK:', {
       sessionToken: sessionToken ? 'EXISTS' : 'MISSING',
       accessToken: localAccessToken ? 'EXISTS' : 'MISSING',
       cookieSession: cookieTokens.sessionToken ? 'EXISTS' : 'MISSING',
       cookieAccess: cookieTokens.accessToken ? 'EXISTS' : 'MISSING',
       finalToken: finalToken ? 'FOUND' : 'NOT_FOUND',
-      finalAccessToken: finalAccessToken ? 'FOUND' : 'NOT_FOUND'
+      finalAccessToken: finalAccessToken ? 'FOUND' : 'NOT_FOUND',
     });
-    
-    // Sync tokens to localStorage if found in cookies but not in localStorage
-    if (cookieTokens.sessionToken && !sessionToken) {
-      localStorage.setItem('session_token', cookieTokens.sessionToken);
-      console.log('ROOT TOKEN SYNC: Synced session_token from cookie to localStorage');
-    }
-    
-    if (cookieTokens.accessToken && !localAccessToken) {
-      localStorage.setItem('access_token', cookieTokens.accessToken);
-      console.log('ROOT TOKEN SYNC: Synced access_token from cookie to localStorage');
-    }
-    
-    return {
-      token: finalToken,
-      accessToken: finalAccessToken
-    };
+
+    return { token: finalToken, accessToken: finalAccessToken };
   }, []);
 
   const getStoredUser = useCallback((): User | null => {
@@ -225,14 +226,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshToken = useCallback(async (): Promise<boolean> => {
     const tokens = getToken();
     const currentToken = tokens.accessToken || tokens.token;
-    
+
     if (!currentToken) {
       console.log('ROOT: No token to refresh');
       return false;
     }
 
     try {
-      console.log('ROOT: Attempting token refresh...');
+      console.log('ROOT: Attempting token refresh with verify-token endpoint');
       const response = await fetch(`${BASE_URL}/customer/auth/verify-token`, {
         method: 'POST',
         headers: {
@@ -250,6 +251,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             token: data.data.token,
             access_token: data.data.access_token || data.data.token
           }, data.data.user);
+          return true;
+        }
+      }
+      console.log('ROOT: Initial token refresh failed, attempting fallback with /me endpoint');
+      const meResponse = await fetch(`${BASE_URL}/customer/auth/me`, {
+        method: 'GET',
+        credentials: 'include', // Use cookies
+      });
+
+      if (meResponse.ok) {
+        const meData = await meResponse.json();
+        if (meData.success && meData.data?.user) {
+          console.log('ROOT: Token refreshed via /me endpoint');
+          storeAuthData({
+            token: meData.data.token,
+            access_token: meData.data.access_token || meData.data.token
+          }, meData.data.user);
           return true;
         }
       }
