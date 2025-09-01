@@ -3,10 +3,12 @@ import {
   Globe, User, ShoppingCart, Menu, X, ChevronDown,
   Server, Shield, FileText, Users, Award, Settings,
   Download, Link, CreditCard, UserCheck, Calendar,
-  Search, Newspaper, Briefcase, ArrowRight
+  Search, Newspaper, Briefcase, ArrowRight, LogOut,
+  Bell, ChevronUp, UserCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useAuth } from '@/context/AuthContext';
 
 interface HeaderProps {
   cartCount?: number;
@@ -118,38 +120,63 @@ const megaMenuData = {
 };
 
 export function Header({ cartCount = 0 }: HeaderProps) {
+  const { user, isAuthenticated, logout, isLoading } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [mobileActiveDropdown, setMobileActiveDropdown] = useState<string | null>(null);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout>();
   const navRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   const handleMouseEnter = (menu: string) => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     setActiveDropdown(menu);
   };
+
   const handleMouseLeave = () => {
     timeoutRef.current = setTimeout(() => {
       setActiveDropdown(null);
     }, 150);
   };
+
   const toggleMobileDropdown = (menu: string) => {
     setMobileActiveDropdown(mobileActiveDropdown === menu ? null : menu);
   };
+
   const toggleMobileMenu = () => {
     setIsMobileMenuOpen(!isMobileMenuOpen);
     setMobileActiveDropdown(null);
   };
+
+  const toggleUserMenu = () => {
+    setShowUserMenu(!showUserMenu);
+  };
+
+  const handleLogout = () => {
+    logout();
+    setShowUserMenu(false);
+  };
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, []);
-
-  const getDropdownPosition = () => {
-    return 'left-1/2 transform -translate-x-1/2';
-  };
 
   const renderGridDropdown = (data: any) => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 p-6">
@@ -231,6 +258,28 @@ export function Header({ cartCount = 0 }: HeaderProps) {
     { label: 'Careers', key: 'careers', direct: true }
   ];
 
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map(word => word[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'active':
+        return 'bg-green-100 text-green-800';
+      case 'pending':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'suspended':
+        return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-white/95 backdrop-blur-md shadow-sm">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -249,6 +298,7 @@ export function Header({ cartCount = 0 }: HeaderProps) {
               <p className="text-xs text-gray-600">Get Your .KE Today!</p>
             </div>
           </div>
+
           {/* Desktop Navigation */}
           <nav className="hidden lg:flex items-center space-x-8" ref={navRef}>
             {navItems.map((item) => (
@@ -279,6 +329,7 @@ export function Header({ cartCount = 0 }: HeaderProps) {
               </div>
             ))}
           </nav>
+
           {/* Actions */}
           <div className="flex items-center space-x-2 sm:space-x-3">
             {/* Cart */}
@@ -298,26 +349,143 @@ export function Header({ cartCount = 0 }: HeaderProps) {
                 </Badge>
               )}
             </Button>
-            {/* User Account */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="hover:bg-red-50 hover:text-red-600 transition-colors duration-200"
-              aria-label="User account"
-            >
-              <User className="h-5 w-5" />
-            </Button>
-            {/* Sign In */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="hidden sm:inline-flex text-sm font-medium px-4 hover:bg-red-600 hover:text-white hover:border-red-600"
-              asChild
-            >
-              <a href="/signin">
-                Sign In
-              </a>
-            </Button>
+
+            {/* Authentication Actions */}
+            {!isLoading && (
+              <>
+                {isAuthenticated && user ? (
+                  <div className="relative" ref={userMenuRef}>
+                    <Button
+                      variant="ghost"
+                      onClick={toggleUserMenu}
+                      className="flex items-center space-x-2 hover:bg-red-50 hover:text-red-600 transition-colors duration-200 px-3"
+                    >
+                      <div className="w-8 h-8 bg-red-600 text-white rounded-full flex items-center justify-center text-sm font-semibold">
+                        {getInitials(user.name)}
+                      </div>
+                      <div className="hidden sm:block text-left">
+                        <div className="text-sm font-medium text-gray-900">
+                          {user.name.split(' ')[0]}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {user.email.length > 20 ? `${user.email.substring(0, 20)}...` : user.email}
+                        </div>
+                      </div>
+                      {showUserMenu ? (
+                        <ChevronUp className="h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" />
+                      )}
+                    </Button>
+
+                    {/* User Dropdown Menu */}
+                    {showUserMenu && (
+                      <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                        {/* User Info Header */}
+                        <div className="p-4 border-b border-gray-100">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-12 h-12 bg-red-600 text-white rounded-full flex items-center justify-center text-lg font-semibold">
+                              {getInitials(user.name)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-semibold text-gray-900">{user.name}</div>
+                              <div className="text-sm text-gray-600 truncate">{user.email}</div>
+                              <div className="flex items-center space-x-2 mt-1">
+                                <Badge 
+                                  variant="secondary" 
+                                  className={`text-xs ${getStatusColor(user.account_status)}`}
+                                >
+                                  {user.account_status}
+                                </Badge>
+                                {!user.is_email_verified && (
+                                  <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">
+                                    Email Unverified
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Menu Items */}
+                        <div className="py-2">
+                          <a
+                            href="https://console.digikenya.co.ke/dashboard"
+                            className="flex items-center space-x-3 px-4 py-3 text-sm text-gray-700 hover:bg-red-50 hover:text-red-600 transition-colors duration-200"
+                          >
+                            <UserCircle className="h-5 w-5" />
+                            <span>Dashboard</span>
+                          </a>
+                          <a
+                            href="https://console.digikenya.co.ke/profile"
+                            className="flex items-center space-x-3 px-4 py-3 text-sm text-gray-700 hover:bg-red-50 hover:text-red-600 transition-colors duration-200"
+                          >
+                            <User className="h-5 w-5" />
+                            <span>Profile Settings</span>
+                          </a>
+                          <a
+                            href="https://console.digikenya.co.ke/domains"
+                            className="flex items-center space-x-3 px-4 py-3 text-sm text-gray-700 hover:bg-red-50 hover:text-red-600 transition-colors duration-200"
+                          >
+                            <Globe className="h-5 w-5" />
+                            <span>My Domains</span>
+                          </a>
+                          <a
+                            href="https://console.digikenya.co.ke/billing"
+                            className="flex items-center space-x-3 px-4 py-3 text-sm text-gray-700 hover:bg-red-50 hover:text-red-600 transition-colors duration-200"
+                          >
+                            <CreditCard className="h-5 w-5" />
+                            <span>Billing</span>
+                          </a>
+                          <a
+                            href="https://console.digikenya.co.ke/support"
+                            className="flex items-center space-x-3 px-4 py-3 text-sm text-gray-700 hover:bg-red-50 hover:text-red-600 transition-colors duration-200"
+                          >
+                            <Settings className="h-5 w-5" />
+                            <span>Support</span>
+                          </a>
+                        </div>
+
+                        {/* Logout */}
+                        <div className="border-t border-gray-100 py-2">
+                          <button
+                            onClick={handleLogout}
+                            className="flex items-center space-x-3 w-full px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors duration-200"
+                          >
+                            <LogOut className="h-5 w-5" />
+                            <span>Sign Out</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {/* User Account (Not logged in) */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="hover:bg-red-50 hover:text-red-600 transition-colors duration-200"
+                      aria-label="User account"
+                    >
+                      <User className="h-5 w-5" />
+                    </Button>
+                    {/* Sign In */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="hidden sm:inline-flex text-sm font-medium px-4 hover:bg-red-600 hover:text-white hover:border-red-600"
+                      asChild
+                    >
+                      <a href="/signin">
+                        Console Signin
+                      </a>
+                    </Button>
+                  </>
+                )}
+              </>
+            )}
+
             {/* Mobile Menu Toggle */}
             <Button
               variant="ghost"
@@ -330,6 +498,7 @@ export function Header({ cartCount = 0 }: HeaderProps) {
             </Button>
           </div>
         </div>
+
         {/* Mobile Menu */}
         <div className={`lg:hidden transition-all duration-300 ease-in-out ${
           isMobileMenuOpen
@@ -337,6 +506,46 @@ export function Header({ cartCount = 0 }: HeaderProps) {
             : 'max-h-0 opacity-0 invisible overflow-hidden'
         }`}>
           <nav className="py-4 space-y-2 bg-white/95 backdrop-blur-md border-t max-h-[calc(100vh-4rem)] overflow-y-auto">
+            {/* Mobile User Info */}
+            {!isLoading && isAuthenticated && user && (
+              <div className="px-3 py-4 border-b border-gray-200 mb-2">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-red-600 text-white rounded-full flex items-center justify-center text-sm font-semibold">
+                    {getInitials(user.name)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-gray-900">{user.name}</div>
+                    <div className="text-sm text-gray-600 truncate">{user.email}</div>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <Badge 
+                        variant="secondary" 
+                        className={`text-xs ${getStatusColor(user.account_status)}`}
+                      >
+                        {user.account_status}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 pt-3 border-t border-gray-100 space-y-1">
+                  <a
+                    href="https://console.digikenya.co.ke/dashboard"
+                    className="flex items-center space-x-2 text-sm text-gray-700 hover:text-red-600 transition-colors duration-200"
+                  >
+                    <UserCircle className="h-4 w-4" />
+                    <span>Dashboard</span>
+                  </a>
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center space-x-2 text-sm text-red-600 hover:text-red-700 transition-colors duration-200"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Navigation Items */}
             {navItems.map((item) => (
               <div key={item.key} className="space-y-2">
                 {item.direct ? (
@@ -416,18 +625,21 @@ export function Header({ cartCount = 0 }: HeaderProps) {
               </div>
             ))}
 
-            <div className="pt-4 border-t border-gray-200">
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full text-sm font-medium hover:bg-red-600 hover:text-white hover:border-red-600"
-                asChild
-              >
-                <a href="/signin" onClick={() => setIsMobileMenuOpen(false)}>
-                  Sign In
-                </a>
-              </Button>
-            </div>
+            {/* Mobile Sign In (when not authenticated) */}
+            {!isLoading && !isAuthenticated && (
+              <div className="pt-4 border-t border-gray-200">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-sm font-medium hover:bg-red-600 hover:text-white hover:border-red-600"
+                  asChild
+                >
+                  <a href="/signin" onClick={() => setIsMobileMenuOpen(false)}>
+                    Sign In
+                  </a>
+                </Button>
+              </div>
+            )}
           </nav>
         </div>
       </div>

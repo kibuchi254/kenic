@@ -60,15 +60,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       if (!response.ok) {
         console.error('AuthProvider: Token validation failed with status:', response.status);
-        return false;
+        return { valid: false, data: null };
       }
       
       const data = await response.json();
       console.log('AuthProvider: Token validation response:', response.status, data);
-      return data.success;
+      return { valid: data.success, data: data.data };
     } catch (error) {
       console.error('AuthProvider: Token validation error:', error);
-      return false;
+      return { valid: false, data: null };
+    }
+  }, []);
+
+  const fetchUserProfile = useCallback(async (tokenToUse: string) => {
+    try {
+      console.log('AuthProvider: Fetching user profile...');
+      const response = await fetch(`${BASE_URL}/customer/auth/me`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${tokenToUse}`,
+        },
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        console.error('AuthProvider: User profile fetch failed with status:', response.status);
+        return null;
+      }
+      
+      const data = await response.json();
+      console.log('AuthProvider: User profile response:', response.status, data);
+      
+      if (data.success && data.data) {
+        return data.data;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('AuthProvider: User profile fetch error:', error);
+      return null;
     }
   }, []);
 
@@ -99,17 +130,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         let tokenToValidate = urlToken || storedToken;
 
         if (tokenToValidate) {
-          const isValid = await validateToken(tokenToValidate);
+          const { valid, data } = await validateToken(tokenToValidate);
           
-          if (isValid) {
+          if (valid) {
             setToken(tokenToValidate);
             setIsAuthenticated(true);
 
+            // Try to get user from storage first
+            let userData = null;
             if (storedUser) {
               try {
-                const parsedUser: User = JSON.parse(storedUser);
-                setUser(parsedUser);
-                console.log('AuthProvider: User set from storage:', parsedUser);
+                userData = JSON.parse(storedUser);
+                console.log('AuthProvider: User set from storage:', userData);
               } catch (e) {
                 console.error('AuthProvider: Invalid stored user data:', e);
                 // Clear invalid user data
@@ -117,6 +149,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 sessionStorage.removeItem('user');
               }
             }
+
+            // If no valid stored user data, fetch from API
+            if (!userData) {
+              console.log('AuthProvider: No stored user data, fetching from API...');
+              userData = await fetchUserProfile(tokenToValidate);
+              
+              if (userData) {
+                // Store the fetched user data
+                localStorage.setItem('user', JSON.stringify(userData));
+                sessionStorage.setItem('user', JSON.stringify(userData));
+                console.log('AuthProvider: User data fetched and stored:', userData);
+              }
+            }
+
+            setUser(userData);
 
             if (urlToken) {
               localStorage.setItem('access_token', urlToken);
@@ -145,7 +192,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     initializeAuth();
-  }, [validateToken]);
+  }, [validateToken, fetchUserProfile]);
 
   const login = (newToken: string, newUser: User) => {
     console.log('AuthProvider: Logging in with token=', newToken, 'user=', newUser);

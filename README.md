@@ -1,73 +1,54 @@
-# Welcome to your Lovable project
+🌍 .KE Domain Registration Platform
+📌 Project Overview
 
-## Project info
+We’ve built a modern Android app and web app that allows users to search and register .ke domains seamlessly.
 
-**URL**: https://lovable.dev/projects/08d3fdea-23ec-4938-ba17-fa8f1b2b23f0
+Our platform is more than just domain registration — we are creating a complete digital ecosystem with upcoming features:
 
-## How can I edit this code?
+✅ .KE Domain Search & Registration
 
-There are several ways of editing your application.
+🚀 AI Coding Tool (coming soon)
 
-**Use Lovable**
+📧 Email Hosting Services (coming soon)
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/08d3fdea-23ec-4938-ba17-fa8f1b2b23f0) and start prompting.
+🌐 DNS Hosting & Management (coming soon)
 
-Changes made via Lovable will be committed automatically to this repo.
+Our mission is to make domain registration and management simpler, faster, and more accessible for everyone.
 
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
+🔧 Tech Stack
+     Web App: React+Vite,Shadcn-ui, Tailwind CSS ,Typescript
+     Android App: Flutter
+     REST API Integration with (Fat Api) for backend
+# Step 2: Navigate into the project directory
 cd <YOUR_PROJECT_NAME>
 
-# Step 3: Install the necessary dependencies.
-npm i
+# Step 3: Install dependencies
+npm install
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# Step 4: Start the development server
 npm run dev
-```
 
-**Edit a file directly in GitHub**
+Android App
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+Open the Android project in Android Studio.
 
-**Use GitHub Codespaces**
+Sync Gradle dependencies.
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+Run the app on an emulator or connected device.
 
-## What technologies are used for this project?
+🚀 Deployment
+Web App
 
-This project is built with:
+🌐 Roadmap
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+ .KE Domain Search
 
-## How can I deploy this project?
+ Domain Registration
 
-Simply open [Lovable](https://lovable.dev/projects/08d3fdea-23ec-4938-ba17-fa8f1b2b23f0) and click on Share -> Publish.
+ AI Coding Tool
 
-## Can I connect a custom domain to my Lovable project?
+ Email Hosting
 
-Yes, you can!
+ DNS Hosting & Management
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+✨ We are on a mission to make .KE domains the most user-friendly and accessible in the world.
