@@ -21,7 +21,7 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (token: string | null, user: User) => Promise<void>;
+  login: (token: string | null, user: User, isCheckoutFlow?: boolean) => Promise<void>;
   logout: () => void;
   refreshToken: () => Promise<boolean>;
 }
@@ -137,25 +137,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const storeAuthData = useCallback((authToken: string, userData: User) => {
+  const storeAuthData = useCallback((authToken: string | null, userData: User) => {
     console.log('AuthProvider: Storing auth data for user:', userData.email);
 
     setToken(authToken);
     setUser(userData);
     setIsAuthenticated(true);
 
-    localStorage.setItem('access_token', authToken);
-    localStorage.setItem('session_token', authToken);
     localStorage.setItem('user', JSON.stringify(userData));
-
-    sessionStorage.setItem('access_token', authToken);
-    sessionStorage.setItem('session_token', authToken);
     sessionStorage.setItem('user', JSON.stringify(userData));
 
-    const expires = new Date();
-    expires.setDate(expires.getDate() + 7);
-    document.cookie = `session_token=${authToken}; expires=${expires.toUTCString()}; path=/; domain=.digikenya.co.ke; secure; samesite=lax`;
-    document.cookie = `access_token=${authToken}; expires=${expires.toUTCString()}; path=/; domain=.digikenya.co.ke; secure; samesite=lax`;
+    if (authToken) {
+      localStorage.setItem('access_token', authToken);
+      localStorage.setItem('session_token', authToken);
+      sessionStorage.setItem('access_token', authToken);
+      sessionStorage.setItem('session_token', authToken);
+
+      const expires = new Date();
+      expires.setDate(expires.getDate() + 7);
+      document.cookie = `session_token=${authToken}; expires=${expires.toUTCString()}; path=/; domain=.digikenya.co.ke; secure; samesite=lax`;
+      document.cookie = `access_token=${authToken}; expires=${expires.toUTCString()}; path=/; domain=.digikenya.co.ke; secure; samesite=lax`;
+    }
 
     console.log('AuthProvider: Auth data stored successfully');
   }, []);
@@ -218,36 +220,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [getToken, storeAuthData]);
 
-  const login = useCallback(async (newToken: string | null, newUser: User) => {
-    console.log('AuthProvider: Logging in user:', newUser.email);
+  const login = useCallback(async (newToken: string | null, newUser: User, isCheckoutFlow: boolean = false) => {
+    console.log('AuthProvider: Logging in user:', newUser.email, { isCheckoutFlow });
 
-    if (!newToken) {
-      console.warn('AuthProvider: No token provided for login, attempting to fetch token');
-      const currentToken = getToken();
-      if (currentToken) {
-        const validation = await validateToken(currentToken);
-        if (validation.valid && validation.user) {
-          storeAuthData(validation.newToken || currentToken, validation.user);
-          return;
-        }
-      }
-      console.error('AuthProvider: No valid token available for login');
+    if (!newUser) {
+      console.error('AuthProvider: No user data provided for login');
+      throw new Error('User data is missing');
+    }
+
+    if (!newToken && !isCheckoutFlow) {
+      console.error('AuthProvider: No token provided for non-checkout login');
       throw new Error('Authentication token is missing');
     }
 
-    const validation = await validateToken(newToken);
-    if (validation.valid) {
-      storeAuthData(validation.newToken || newToken, validation.user || newUser);
-    } else {
-      console.error('AuthProvider: Provided token is invalid');
-      throw new Error('Invalid authentication token');
+    if (newToken && !isCheckoutFlow) {
+      const validation = await validateToken(newToken);
+      if (validation.valid) {
+        storeAuthData(validation.newToken || newToken, validation.user || newUser);
+      } else {
+        console.error('AuthProvider: Provided token is invalid');
+        throw new Error('Invalid authentication token');
+      }
+    } else if (isCheckoutFlow) {
+      // For checkout flow, allow login without token if user is verified
+      if (newUser.is_email_verified && newUser.account_status === 'active') {
+        console.log('AuthProvider: Bypassing token validation for checkout flow with verified user');
+        storeAuthData(newToken, newUser);
+      } else {
+        console.error('AuthProvider: User not verified for checkout flow');
+        throw new Error('User is not verified or account is not active');
+      }
     }
 
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.has('token')) {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
-  }, [storeAuthData, validateToken, getToken]);
+  }, [storeAuthData, validateToken]);
 
   const logout = useCallback(() => {
     console.log('AuthProvider: Logging out user');
