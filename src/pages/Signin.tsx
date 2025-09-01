@@ -364,11 +364,11 @@ const Signin = () => {
     
     // Handle post-login redirection
     if (isCheckoutReturn) {
-      // Redirect back to checkout
+      // Redirect back to checkout page
       navigate('/domain-checkout');
     } else {
-      // Redirect to main dashboard or console
-      navigate('/');
+      // Redirect to console for normal login
+      window.location.href = `${CONSOLE_URL}/dashboard`;
     }
   };
 
@@ -384,6 +384,15 @@ const Signin = () => {
       console.log('Login response:', response);
 
       if (response.success && response.data) {
+        if (isCheckoutReturn) {
+          // For checkout returns, handle auth directly here
+          const { token, user } = response.data;
+          if (token && user) {
+            handleAuthSuccess(token, user);
+            return;
+          }
+        }
+        
         if (isCheckoutReturn) {
           // For checkout returns, handle auth directly here
           const { token, user } = response.data;
@@ -468,6 +477,15 @@ const Signin = () => {
           }
         }
         
+        if (isCheckoutReturn) {
+          // For checkout returns, handle auth directly here
+          const { token, user } = response.data;
+          if (token && user) {
+            handleAuthSuccess(token, user);
+            return;
+          }
+        }
+        
         const { redirect_url } = response.data;
         
         if (redirect_url) {
@@ -535,6 +553,15 @@ const Signin = () => {
       console.log('Google auth response:', apiResponse);
 
       if (apiResponse.success && apiResponse.data) {
+        if (isCheckoutReturn) {
+          // For checkout returns, handle auth directly here
+          const { token, user } = apiResponse.data;
+          if (token && user) {
+            handleAuthSuccess(token, user);
+            return;
+          }
+        }
+        
         if (isCheckoutReturn) {
           // For checkout returns, handle auth directly here
           const { token, user } = apiResponse.data;
