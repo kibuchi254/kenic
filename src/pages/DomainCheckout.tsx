@@ -176,6 +176,11 @@ export default function DomainCheckout() {
   };
 
   const registerDomain = async () => {
+    if (!token) {
+      console.error('DomainCheckout: No authentication token available');
+      throw new Error('Authentication token is missing. Please sign in again.');
+    }
+
     const { firstName, lastName } = splitFullName(formData.fullName);
     
     const registrationData = {
@@ -231,25 +236,30 @@ export default function DomainCheckout() {
 
     console.log('DomainCheckout: Sending domain registration request:', registrationData);
 
-    const response = await fetch(`${BASE_URL}/api/v1/register`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      credentials: 'include',
-      body: JSON.stringify(registrationData),
-    });
+    try {
+      const response = await fetch(`${BASE_URL}/api/v1/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'include',
+        body: JSON.stringify(registrationData),
+      });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('DomainCheckout: Registration failed:', errorData);
-      throw new Error(errorData.message || `Registration failed with status: ${response.status}`);
+      const result = await response.json();
+      
+      if (!response.ok) {
+        console.error('DomainCheckout: Registration failed:', result);
+        throw new Error(result.detail || `Registration failed with status: ${response.status}`);
+      }
+
+      console.log('DomainCheckout: Registration response:', result);
+      return result;
+    } catch (error) {
+      console.error('DomainCheckout: Registration error:', error);
+      throw error;
     }
-
-    const result = await response.json();
-    console.log('DomainCheckout: Registration response:', result);
-    return result;
   };
 
   const handleCheckout = async (e: React.FormEvent) => {
@@ -257,6 +267,13 @@ export default function DomainCheckout() {
     
     if (!validateForm()) {
       console.log('DomainCheckout: Form validation failed:', errors);
+      return;
+    }
+
+    if (!isAuthenticated || !token) {
+      console.error('DomainCheckout: User not authenticated or token missing');
+      setErrors({ api: 'Please sign in to complete the registration.' });
+      navigate('/signin?return=checkout&domain=' + encodeURIComponent(domain));
       return;
     }
 
@@ -292,7 +309,7 @@ export default function DomainCheckout() {
     } catch (error) {
       console.error('DomainCheckout: Checkout error:', error);
       setErrors({ 
-        api: error.message || 'An error occurred during registration. Please try again.' 
+        api: error.message || 'An error occurred during registration. Please try again or contact support.' 
       });
       setIsProcessing(false);
       setProcessingStep("");
