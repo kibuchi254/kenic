@@ -29,7 +29,6 @@ class ApiError extends Error {
 const apiService = {
   async makeRequest<T>(endpoint: string, options: RequestInit = {}): Promise<any> {
     const url = `${BASE_URL}${endpoint}`;
-    
     const config: RequestInit = {
       ...options,
       headers: {
@@ -42,10 +41,8 @@ const apiService = {
 
     try {
       console.log(`API Request: ${config.method || 'GET'} ${url}`);
-      
       const response = await fetch(url, config);
       const data = await response.json();
-
       console.log(`API Response: ${response.status}`, data);
 
       if (!response.ok) {
@@ -62,7 +59,6 @@ const apiService = {
       if (error instanceof ApiError) {
         throw error;
       }
-      
       console.error('API Request failed:', error);
       throw new ApiError(
         error instanceof Error ? error.message : 'Network request failed'
@@ -84,6 +80,13 @@ const apiService = {
     });
   },
 
+  async exchangeCode(code: string) {
+    return this.makeRequest(API_ENDPOINTS.EXCHANGE_CODE, {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+  },
+
   async verifyEmail(email: string, otp: string) {
     return this.makeRequest(API_ENDPOINTS.VERIFY_EMAIL, {
       method: 'POST',
@@ -99,7 +102,7 @@ const apiService = {
   },
 };
 
-// Fixed React Icons for Email and Password with valid SVG paths
+// Fixed React Icons for Email and Password
 const MailIcon = ({ className }: { className: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
     <path d="M1.5 8.67v8.58a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V8.67l-8.928 5.493a3 3 0 0 1-3.144 0L1.5 8.67Z" />
@@ -247,7 +250,7 @@ const Signin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [verificationAttempts, setVerificationAttempts] = useState(0);
-  
+
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { login, isAuthenticated } = useAuth();
@@ -255,34 +258,41 @@ const Signin = () => {
   // Extract URL parameters for checkout flow
   const returnType = searchParams.get('return');
   const domainParam = searchParams.get('domain');
-  const isCheckoutReturn = returnType === 'checkout';
+  const isCheckoutReturn = returnType === 'checkout' && !!domainParam;
 
   console.log('Signin: URL params detected:', { returnType, domainParam, isCheckoutReturn });
 
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      if (isCheckoutReturn) {
-        console.log('Signin: Already authenticated, redirecting to checkout');
-        // Restore checkout data from sessionStorage
-        const pendingCheckout = sessionStorage.getItem('pendingCheckout');
-        let checkoutState = {};
-        if (pendingCheckout) {
-          try {
-            checkoutState = JSON.parse(pendingCheckout);
-            console.log('Signin: Restored checkout state:', checkoutState);
-            sessionStorage.removeItem('pendingCheckout'); // Clean up
-          } catch (error) {
-            console.error('Signin: Error parsing pendingCheckout:', error);
-          }
+      console.log('Signin: Already authenticated, redirecting to checkout');
+      const pendingCheckout = sessionStorage.getItem('pendingCheckout');
+      let checkoutState = {
+        domain: domainParam || 'myawesomebrand.co.ke',
+        price: 1200,
+        renewal: 1200,
+        isQuickCheckout: true,
+        extension: {
+          ext: '.co.ke',
+          desc: 'For commercial enterprises',
+          popular: true,
+          price: 'KSh 1,500/year',
+        },
+        returnUrl: '/domain-checkout',
+      };
+      if (pendingCheckout) {
+        try {
+          checkoutState = { ...checkoutState, ...JSON.parse(pendingCheckout) };
+          console.log('Signin: Restored checkout state:', checkoutState);
+          sessionStorage.removeItem('pendingCheckout');
+        } catch (error) {
+          console.error('Signin: Error parsing pendingCheckout:', error);
         }
-        navigate('/domain-checkout', { state: checkoutState });
-      } else {
-        console.log('Signin: Already authenticated, redirecting to dashboard');
-        navigate('/');
       }
+      console.log('Signin: Redirecting with checkout state:', JSON.stringify(checkoutState, null, 2));
+      navigate('/domain-checkout', { state: checkoutState });
     }
-  }, [isAuthenticated, isCheckoutReturn, navigate]);
+  }, [isAuthenticated, navigate, isCheckoutReturn, domainParam]);
 
   // Cooldown timer effect
   useEffect(() => {
@@ -303,42 +313,56 @@ const Signin = () => {
               callback: handleGoogleAuthResponse,
               auto_select: false,
               cancel_on_tap_outside: true,
+              context: 'signin',
             });
-            
+
             const signinButton = document.getElementById('google-signin-button');
             if (signinButton) {
-              window.google.accounts.id.renderButton(signinButton, { 
-                theme: 'outline', 
-                size: 'large', 
+              window.google.accounts.id.renderButton(signinButton, {
+                theme: 'outline',
+                size: 'large',
                 width: 400,
                 text: 'signin_with',
                 shape: 'rectangular',
               });
+              console.log('Signin: Google Sign-In button rendered');
+            } else {
+              console.error('Signin: Google Sign-In button element not found');
+              setErrors(prev => ({
+                ...prev,
+                google: 'Failed to render Google Sign-In button. Please use email sign-in.',
+              }));
             }
           } catch (error) {
-            console.error('Google Sign-In initialization error:', error);
-            setErrors(prev => ({ 
-              ...prev, 
-              google: 'Google Sign-In is temporarily unavailable. Please use email sign-in.' 
+            console.error('Signin: Google Sign-In initialization error:', error);
+            setErrors(prev => ({
+              ...prev,
+              google: 'Google Sign-In is temporarily unavailable. Please use email sign-in.',
             }));
           }
+        } else {
+          console.error('Signin: Google Sign-In script not loaded');
+          setErrors(prev => ({
+            ...prev,
+            google: 'Google Sign-In failed to load. Please use email sign-in.',
+          }));
         }
       };
 
       const script = document.createElement('script');
       script.src = 'https://accounts.google.com/gsi/client';
       script.async = true;
+      script.defer = true;
       script.onload = initializeGoogleAuth;
       script.onerror = () => {
-        console.error('Failed to load Google Sign-In script');
-        setErrors(prev => ({ 
-          ...prev, 
-          google: 'Failed to load Google Sign-In. Please use email sign-in.' 
+        console.error('Signin: Failed to load Google Sign-In script');
+        setErrors(prev => ({
+          ...prev,
+          google: 'Failed to load Google Sign-In. Please use email sign-in.',
         }));
       };
-      
       document.body.appendChild(script);
-      
+
       return () => {
         if (document.body.contains(script)) {
           document.body.removeChild(script);
@@ -355,94 +379,90 @@ const Signin = () => {
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
-    
     if (!formData.email.trim()) {
       newErrors.email = 'Email is required';
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
       newErrors.email = 'Please enter a valid email address';
     }
-    
     if (!formData.password) {
       newErrors.password = 'Password is required';
     } else if (formData.password.length < 6) {
       newErrors.password = 'Password must be at least 6 characters';
     }
-    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   // Centralized authentication success handler
-  const handleAuthSuccess = (token: string | null, user: any) => {
+  const handleAuthSuccess = async (token: string | null, user: any) => {
     console.log('Signin: Authentication successful for user:', user.email);
     console.log('Signin: Is checkout return?', isCheckoutReturn);
-    
-    // Use the login function from AuthContext to store auth data
-    login(token, user);
-    
-    // Handle post-login redirection based on the flow
-    if (isCheckoutReturn) {
-      console.log('Signin: Redirecting to domain checkout');
-      // Restore checkout data from sessionStorage
+
+    try {
+      await login(token, user);
       const pendingCheckout = sessionStorage.getItem('pendingCheckout');
-      let checkoutState = {};
+      let checkoutState = {
+        domain: domainParam || 'myawesomebrand.co.ke',
+        price: 1200,
+        renewal: 1200,
+        isQuickCheckout: true,
+        extension: {
+          ext: '.co.ke',
+          desc: 'For commercial enterprises',
+          popular: true,
+          price: 'KSh 1,500/year',
+        },
+        returnUrl: '/domain-checkout',
+      };
       if (pendingCheckout) {
         try {
-          checkoutState = JSON.parse(pendingCheckout);
+          checkoutState = { ...checkoutState, ...JSON.parse(pendingCheckout) };
           console.log('Signin: Restored checkout state:', checkoutState);
-          sessionStorage.removeItem('pendingCheckout'); // Clean up
+          sessionStorage.removeItem('pendingCheckout');
         } catch (error) {
           console.error('Signin: Error parsing pendingCheckout:', error);
         }
       }
+      console.log('Signin: Redirecting with checkout state:', JSON.stringify(checkoutState, null, 2));
       navigate('/domain-checkout', { state: checkoutState });
-    } else {
-      console.log('Signin: Redirecting to console dashboard');
-      window.location.href = `${CONSOLE_URL}/dashboard`;
+    } catch (error) {
+      console.error('Signin: Login error in handleAuthSuccess:', error);
+      setErrors({ api: 'Authentication failed. Please try again.' });
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
-    
+
     setIsLoading(true);
     setErrors({});
 
     try {
       const response = await apiService.login(formData.email.trim(), formData.password);
-      console.log('Login response:', response);
+      console.log('Signin: Login response:', response);
 
       if (response.success && response.data) {
-        // Check for direct token/user response first (for checkout flow)
         const { token, user, redirect_url } = response.data;
-        
         if (token && user && isCheckoutReturn) {
-          // Direct authentication for checkout flow
           console.log('Signin: Direct auth for checkout flow');
-          handleAuthSuccess(token, user);
+          await handleAuthSuccess(token, user);
           return;
         }
-        
         if (redirect_url && !isCheckoutReturn) {
-          // Redirect flow for normal login
           console.log('Signin: Redirect flow for normal login');
           window.location.href = redirect_url;
           return;
         }
-        
-        // Fallback - if we have token/user but no specific flow detected
         if (token && user) {
           console.log('Signin: Fallback direct auth');
-          handleAuthSuccess(token, user);
+          await handleAuthSuccess(token, user);
           return;
         }
-        
         throw new ApiError('Invalid response format from server');
       } else {
         throw new ApiError(response.message || 'Login failed');
       }
-
     } catch (error) {
       console.error('Signin: Login error:', error);
       if (error instanceof ApiError) {
@@ -493,38 +513,29 @@ const Signin = () => {
 
     try {
       const response = await apiService.verifyEmail(formData.email.trim(), otpString);
-      console.log('Verify email response:', response);
+      console.log('Signin: Verify email response:', response);
 
       if (response.success && response.data) {
-        // Check for direct token/user response first (for checkout flow)
         const { token, user, redirect_url } = response.data;
-        
         if (token && user && isCheckoutReturn) {
-          // Direct authentication for checkout flow
           console.log('Signin: Direct auth after verification for checkout flow');
-          handleAuthSuccess(token, user);
+          await handleAuthSuccess(token, user);
           return;
         }
-        
         if (redirect_url && !isCheckoutReturn) {
-          // Redirect flow for normal login
           console.log('Signin: Redirect flow after verification for normal login');
           window.location.href = redirect_url;
           return;
         }
-        
-        // Fallback - if we have token/user but no specific flow detected
         if (token && user) {
           console.log('Signin: Fallback direct auth after verification');
-          handleAuthSuccess(token, user);
+          await handleAuthSuccess(token, user);
           return;
         }
-        
         throw new ApiError('Invalid response format after verification');
       } else {
         throw new ApiError(response.message || 'Email verification failed');
       }
-
     } catch (error) {
       console.error('Signin: OTP verify error:', error);
       if (error instanceof ApiError) {
@@ -573,49 +584,61 @@ const Signin = () => {
   const handleGoogleAuthResponse = async (response: any) => {
     setIsLoading(true);
     setErrors({});
-    
+
     try {
       const apiResponse = await apiService.googleAuth(response.credential);
-      console.log('Google auth response:', JSON.stringify(apiResponse, null, 2));
+      console.log('Signin: Google auth response:', JSON.stringify(apiResponse, null, 2));
 
       if (apiResponse.success && apiResponse.data) {
-        // Check for empty data object
-        if (!apiResponse.data || Object.keys(apiResponse.data).length === 0) {
-          console.warn('Signin: Google auth response data is empty');
-          setErrors({ 
-            google: 'Authentication failed due to missing data. Please try email sign-in.' 
-          });
+        let { token, user, redirect_url } = apiResponse.data;
+
+        // Handle redirect_url with code for checkout flow
+        if (!token && redirect_url && redirect_url.includes('code=') && isCheckoutReturn) {
+          try {
+            const url = new URL(redirect_url);
+            const code = url.searchParams.get('code');
+            if (code) {
+              console.log('Signin: Exchanging code for token');
+              const tokenResponse = await apiService.exchangeCode(code);
+              if (tokenResponse.success && tokenResponse.data?.token) {
+                token = tokenResponse.data.token;
+                user = tokenResponse.data.user || user; // Use user from exchange if provided
+                console.log('Signin: Token obtained:', token.substring(0, 20) + '...');
+              } else {
+                throw new ApiError(tokenResponse.message || 'Failed to exchange code for token');
+              }
+            } else {
+              throw new ApiError('No authorization code in redirect URL');
+            }
+          } catch (error) {
+            console.error('Signin: Code exchange error:', error);
+            setErrors({ google: 'Failed to authenticate with Google. Please try again.' });
+            setIsLoading(false);
+            return;
+          }
+        }
+
+        if (user && token && isCheckoutReturn) {
+          console.log('Signin: Direct Google auth for checkout flow');
+          await handleAuthSuccess(token, user);
           return;
         }
 
-        // Destructure response, allowing token to be optional
-        const { token, user, redirect_url } = apiResponse.data;
-        
-        if (user && isCheckoutReturn) {
-          // Direct authentication for checkout flow (token optional)
-          console.log('Signin: Direct Google auth for checkout flow');
-          handleAuthSuccess(token || null, user);
-          return;
-        }
-        
         if (redirect_url && !isCheckoutReturn) {
-          // Redirect flow for normal login
           console.log('Signin: Google auth redirect flow for normal login');
           window.location.href = redirect_url;
           return;
         }
-        
-        // Fallback - if we have user but no specific flow detected
-        if (user) {
+
+        if (user && token) {
           console.log('Signin: Fallback Google direct auth');
-          handleAuthSuccess(token || null, user);
+          await handleAuthSuccess(token, user);
           return;
         }
-        
-        // Log unexpected response format
+
         console.warn('Signin: Unexpected Google auth response format:', apiResponse.data);
-        setErrors({ 
-          google: 'Authentication failed due to an unexpected response. Please try email sign-in.' 
+        setErrors({
+          google: 'Authentication failed due to an unexpected response. Please try email sign-in.',
         });
       } else {
         throw new ApiError(apiResponse.message || 'Google authentication failed');
@@ -624,8 +647,8 @@ const Signin = () => {
       console.error('Signin: Google auth error:', error);
       if (error instanceof ApiError) {
         if (error.message.includes('CORS') || error.message.includes('Failed to fetch')) {
-          setErrors({ 
-            google: 'Google Sign-In is temporarily unavailable. Please use email sign-in instead.' 
+          setErrors({
+            google: 'Google Sign-In is temporarily unavailable. Please use email sign-in instead.',
           });
         } else {
           setErrors({ google: error.message });
@@ -652,7 +675,6 @@ const Signin = () => {
       <div className="font-sans min-h-screen flex flex-col lg:flex-row">
         <div className="flex-1 flex items-center justify-center p-4 sm:p-8 bg-gradient-to-br from-gray-50 to-white">
           <div className="w-full max-w-md space-y-6">
-            {/* Checkout Banner */}
             {isCheckoutReturn && domainParam && (
               <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
                 <div className="flex items-center space-x-2">
@@ -679,10 +701,9 @@ const Signin = () => {
                 {isCheckoutReturn ? 'Sign in to continue' : 'Welcome back'}
               </h2>
               <p className="text-gray-600 text-sm">
-                {isCheckoutReturn 
-                  ? 'Sign in to complete your domain registration' 
-                  : 'Sign in to your account to continue'
-                }
+                {isCheckoutReturn
+                  ? 'Sign in to complete your domain registration'
+                  : 'Sign in to your account to continue'}
               </p>
             </div>
 
@@ -741,8 +762,8 @@ const Signin = () => {
                 onPasswordToggle={() => setShowPassword(!showPassword)}
               />
               <div className="text-right">
-                <a 
-                  href="https://digikenya.co.ke/forgot-password" 
+                <a
+                  href="https://digikenya.co.ke/forgot-password"
                   className="text-sm text-red-600 hover:text-red-700 font-medium transition-colors duration-200"
                 >
                   Forgot your password?
