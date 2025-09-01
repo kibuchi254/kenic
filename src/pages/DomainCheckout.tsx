@@ -37,7 +37,7 @@ export default function DomainCheckout() {
 
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, token, isAuthenticated, isLoading, refreshToken } = useAuth();
+  const { user, token, accessToken, isAuthenticated, isLoading, refreshToken } = useAuth();
 
   const urlParams = new URLSearchParams(location.search);
   const urlDomain = urlParams.get('domain') || 'myawesomebrand.co.ke';
@@ -165,12 +165,28 @@ export default function DomainCheckout() {
     return { firstName, lastName };
   };
 
+  const getAuthToken = () => {
+    // Prioritize accessToken, fallback to token
+    const authToken = accessToken || token;
+    console.log('DomainCheckout: Getting auth token:', {
+      accessToken: accessToken ? 'EXISTS' : 'MISSING',
+      token: token ? 'EXISTS' : 'MISSING',
+      final: authToken ? 'FOUND' : 'NOT_FOUND'
+    });
+    return authToken;
+  };
+
   const registerDomain = async () => {
-    let authToken = token;
+    let authToken = getAuthToken();
+    
     if (!authToken) {
       console.log('DomainCheckout: No token, attempting refresh');
       const refreshed = await refreshToken();
-      authToken = refreshed ? useAuth().token : null;
+      if (refreshed) {
+        // Get the updated token after refresh
+        authToken = getAuthToken();
+      }
+      
       if (!authToken) {
         console.error('DomainCheckout: No authentication token available after refresh');
         throw new Error('Authentication token is missing. Please sign in again.');
@@ -230,7 +246,8 @@ export default function DomainCheckout() {
       }
     };
 
-    console.log('DomainCheckout: Sending domain registration request:', JSON.stringify(registrationData, null, 2));
+    console.log('DomainCheckout: Sending domain registration request with token:', authToken ? 'EXISTS' : 'MISSING');
+    console.log('DomainCheckout: Registration data:', JSON.stringify(registrationData, null, 2));
 
     try {
       const response = await fetch(`${BASE_URL}/api/v1/register`, {
@@ -246,7 +263,44 @@ export default function DomainCheckout() {
       const result = await response.json();
       
       if (!response.ok) {
-        console.error('DomainCheckout: Registration failed:', JSON.stringify(result, null, 2));
+        console.error('DomainCheckout: Registration failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          result: JSON.stringify(result, null, 2)
+        });
+        
+        // Handle authentication errors specifically
+        if (response.status === 401) {
+          console.error('DomainCheckout: Authentication failed, attempting token refresh');
+          const refreshed = await refreshToken();
+          if (refreshed) {
+            console.log('DomainCheckout: Token refreshed, retrying registration');
+            // Retry the request with the new token
+            const newToken = getAuthToken();
+            if (newToken) {
+              const retryResponse = await fetch(`${BASE_URL}/api/v1/register`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${newToken}`,
+                },
+                credentials: 'include',
+                body: JSON.stringify(registrationData),
+              });
+              
+              const retryResult = await retryResponse.json();
+              if (retryResponse.ok) {
+                console.log('DomainCheckout: Registration successful on retry:', JSON.stringify(retryResult, null, 2));
+                return retryResult;
+              } else {
+                console.error('DomainCheckout: Registration failed on retry:', JSON.stringify(retryResult, null, 2));
+                throw new Error(retryResult.detail || `Registration failed: ${retryResponse.status}`);
+              }
+            }
+          }
+          throw new Error('Authentication failed. Please sign in again.');
+        }
+        
         throw new Error(result.detail || `Registration failed with status: ${response.status}`);
       }
 
@@ -273,10 +327,13 @@ export default function DomainCheckout() {
       return;
     }
 
-    if (!token) {
+    const authToken = getAuthToken();
+    if (!authToken) {
       console.log('DomainCheckout: No token, attempting refresh before checkout');
       const refreshed = await refreshToken();
-      if (!refreshed || !useAuth().token) {
+      const newToken = getAuthToken();
+      
+      if (!refreshed || !newToken) {
         console.error('DomainCheckout: User not authenticated or token missing after refresh');
         setErrors({ api: 'Authentication failed. Please sign in again.' });
         navigate('/signin?return=checkout&domain=' + encodeURIComponent(domain));
@@ -310,9 +367,27 @@ export default function DomainCheckout() {
 
     } catch (error: any) {
       console.error('DomainCheckout: Checkout error:', error);
-      setErrors({ 
-        api: error.message || 'An error occurred during registration. Please try again or contact support.' 
-      });
+      
+      // Provide more specific error messages
+      let errorMessage = 'An error occurred during registration. Please try again or contact support.';
+      
+      if (error.message.includes('Authentication')) {
+        errorMessage = 'Authentication failed. Please sign in again.';
+        // Clear auth state and redirect to signin
+        setTimeout(() => {
+          navigate('/signin?return=checkout&domain=' + encodeURIComponent(domain));
+        }, 2000);
+      } else if (error.message.includes('Invalid authentication credentials')) {
+        errorMessage = 'Your session has expired. Please sign in again.';
+        // Clear auth state and redirect to signin
+        setTimeout(() => {
+          navigate('/signin?return=checkout&domain=' + encodeURIComponent(domain));
+        }, 2000);
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      setErrors({ api: errorMessage });
       setIsProcessing(false);
       setProcessingStep("");
     }
