@@ -1,5 +1,4 @@
-// Enhanced DomainCheckout Component with Live Pricing Integration
-
+//// Enhanced DomainCheckout Component with Live Pricing Integration
 import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { FaMoneyBill, FaCreditCard, FaPaypal } from "react-icons/fa";
@@ -61,16 +60,13 @@ const DomainCheckout: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStep, setProcessingStep] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
-
   const location = useLocation();
   const navigate = useNavigate();
   const { user, token, accessToken, isAuthenticated, isLoading, refreshToken } = useAuth();
-
   const urlParams = new URLSearchParams(location.search);
   const urlDomain = urlParams.get('domain') || 'myawesomebrand.co.ke';
 
   const [checkoutState, setCheckoutState] = useState<CheckoutState>(() => {
-    console.log('DomainCheckout: Initializing checkout state');
     const defaultState: CheckoutState = {
       domain: urlDomain,
       price: 1500,
@@ -79,7 +75,6 @@ const DomainCheckout: React.FC = () => {
     };
 
     if (location.state) {
-      console.log('DomainCheckout: Using location.state:', JSON.stringify(location.state, null, 2));
       const state = location.state as Partial<CheckoutState>;
       if (state.domain) {
         return {
@@ -96,7 +91,6 @@ const DomainCheckout: React.FC = () => {
     if (pendingCheckout) {
       try {
         const parsedData = JSON.parse(pendingCheckout) as Partial<CheckoutState>;
-        console.log('DomainCheckout: Restored checkout state from sessionStorage:', JSON.stringify(parsedData, null, 2));
         sessionStorage.removeItem('pendingCheckout');
         if (parsedData.domain) {
           return {
@@ -108,11 +102,10 @@ const DomainCheckout: React.FC = () => {
           };
         }
       } catch (error) {
-        console.error('DomainCheckout: Error parsing pendingCheckout:', error);
+        console.error('Error parsing pendingCheckout:', error);
       }
     }
 
-    console.log('DomainCheckout: Falling back to default checkout state with URL domain:', urlDomain);
     return defaultState;
   });
 
@@ -121,13 +114,12 @@ const DomainCheckout: React.FC = () => {
   // Calculate pricing based on live pricing data and selected years
   const getYearlyPrice = (years: number): number => {
     if (!pricing) return price * years;
-    
+
     const yearKey = `${years}_year${years > 1 ? 's' : ''}` as keyof typeof pricing.registration;
     const yearlyPrice = pricing.registration[yearKey];
-    
+
     if (yearlyPrice) return yearlyPrice;
-    
-    // Fallback to multiplication if specific year pricing not available
+
     const basePrice = pricing.registration['1_year'] || price;
     return basePrice * years;
   };
@@ -153,12 +145,7 @@ const DomainCheckout: React.FC = () => {
   };
 
   useEffect(() => {
-    console.log('DomainCheckout: Initialized checkout state:', JSON.stringify(checkoutState, null, 2));
-  }, [checkoutState]);
-
-  useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      console.log('DomainCheckout: User not authenticated, redirecting to signin');
       const checkoutData: CheckoutState = {
         domain,
         price,
@@ -169,16 +156,13 @@ const DomainCheckout: React.FC = () => {
         pricing,
         returnUrl: window.location.pathname + window.location.search
       };
-      console.log('DomainCheckout: Storing checkout data in sessionStorage:', JSON.stringify(checkoutData, null, 2));
       sessionStorage.setItem('pendingCheckout', JSON.stringify(checkoutData));
-      
       navigate('/signin?return=checkout&domain=' + encodeURIComponent(domain));
     }
   }, [isAuthenticated, isLoading, navigate, domain, price, renewal, isQuickCheckout, registrar, extension, pricing]);
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      console.log('DomainCheckout: Pre-filling form with user data:', JSON.stringify(user, null, 2));
       setFormData(prev => ({
         ...prev,
         fullName: user.name || "",
@@ -200,18 +184,35 @@ const DomainCheckout: React.FC = () => {
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
-    if (!formData.fullName.trim()) newErrors.fullName = 'Full name is required';
-    if (!formData.email.trim()) {
+    const trimmedData = {
+      fullName: formData.fullName?.trim() || '',
+      email: formData.email?.trim() || '',
+      phone: formData.phone?.trim() || '',
+      address: formData.address?.trim() || '',
+      city: formData.city?.trim() || '',
+      state: formData.state?.trim() || '',
+      postalCode: formData.postalCode?.trim() || ''
+    };
+
+    if (!trimmedData.fullName) newErrors.fullName = 'Full name is required';
+
+    if (!trimmedData.email) {
       newErrors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedData.email)) {
       newErrors.email = 'Please enter a valid email address';
     }
-    if (!formData.phone.trim()) newErrors.phone = 'Phone number is required';
-    if (!formData.address.trim()) newErrors.address = 'Address is required';
-    if (!formData.city.trim()) newErrors.city = 'City is required';
-    if (!formData.state.trim()) newErrors.state = 'State/Province is required';
-    if (!formData.postalCode.trim()) newErrors.postalCode = 'Postal code is required';
-    
+
+    if (!trimmedData.phone) {
+      newErrors.phone = 'Phone number is required';
+    } else if (trimmedData.phone.length < 10) {
+      newErrors.phone = 'Please enter a valid phone number';
+    }
+
+    if (!trimmedData.address) newErrors.address = 'Address is required';
+    if (!trimmedData.city) newErrors.city = 'City is required';
+    if (!trimmedData.state) newErrors.state = 'State/Province is required';
+    if (!trimmedData.postalCode) newErrors.postalCode = 'Postal code is required';
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -225,18 +226,13 @@ const DomainCheckout: React.FC = () => {
 
   const getAuthToken = (): string | null => {
     const authToken = accessToken || token;
-    console.log('DomainCheckout: Getting auth token:', {
-      accessToken: accessToken ? 'EXISTS' : 'MISSING',
-      token: token ? 'EXISTS' : 'MISSING',
-      final: authToken ? 'FOUND' : 'NOT_FOUND',
-    });
     return authToken;
   };
 
   const debugAuthHeaders = (): void => {
     const authToken = getAuthToken();
     const cookies = document.cookie;
-    
+
     console.log('Current auth state:', {
       token: authToken ? authToken.substring(0, 20) + '...' : 'MISSING',
       cookies: cookies || 'NONE',
@@ -252,9 +248,7 @@ const DomainCheckout: React.FC = () => {
   };
 
   const registerDomain = async (): Promise<any> => {
-    console.log('DomainCheckout: Starting domain registration');
     debugAuthHeaders();
-
     const { firstName, lastName } = splitFullName(formData.fullName);
     const registrationData = {
       domain,
@@ -268,40 +262,40 @@ const DomainCheckout: React.FC = () => {
         registrant: {
           first_name: firstName,
           last_name: lastName,
-          email: formData.email,
-          phone: formData.phone,
-          organization: formData.organization || '',
-          address1: formData.address,
+          email: formData.email.trim(),
+          phone: formData.phone.trim(),
+          organization: formData.organization?.trim() || '',
+          address1: formData.address.trim(),
           address2: '',
-          city: formData.city,
-          state: formData.state,
-          postal_code: formData.postalCode,
+          city: formData.city.trim(),
+          state: formData.state.trim(),
+          postal_code: formData.postalCode.trim(),
           country: formData.country,
         },
         admin: {
           first_name: firstName,
           last_name: lastName,
-          email: formData.email,
-          phone: formData.phone,
-          organization: formData.organization || "",
-          address1: formData.address,
+          email: formData.email.trim(),
+          phone: formData.phone.trim(),
+          organization: formData.organization?.trim() || "",
+          address1: formData.address.trim(),
           address2: "",
-          city: formData.city,
-          state: formData.state,
-          postal_code: formData.postalCode,
+          city: formData.city.trim(),
+          state: formData.state.trim(),
+          postal_code: formData.postalCode.trim(),
           country: formData.country
         },
         tech: {
           first_name: firstName,
           last_name: lastName,
-          email: formData.email,
-          phone: formData.phone,
-          organization: formData.organization || "",
-          address1: formData.address,
+          email: formData.email.trim(),
+          phone: formData.phone.trim(),
+          organization: formData.organization?.trim() || "",
+          address1: formData.address.trim(),
           address2: "",
-          city: formData.city,
-          state: formData.state,
-          postal_code: formData.postalCode,
+          city: formData.city.trim(),
+          state: formData.state.trim(),
+          postal_code: formData.postalCode.trim(),
           country: formData.country
         }
       }
@@ -309,12 +303,13 @@ const DomainCheckout: React.FC = () => {
 
     const authToken = getAuthToken();
     if (!authToken) {
-      console.error('DomainCheckout: No auth token available');
       throw new Error('Authentication token missing. Please sign in again.');
     }
 
     try {
-      console.log('DomainCheckout: Attempting registration with token');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
       const response = await fetch(`${BASE_URL}/api/v1/register`, {
         method: 'POST',
         headers: {
@@ -323,56 +318,79 @@ const DomainCheckout: React.FC = () => {
         },
         credentials: 'include',
         body: JSON.stringify(registrationData),
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
       const result = await response.json();
+
       if (response.ok && result.success) {
-        console.log('DomainCheckout: Registration successful');
         return result;
       } else {
-        console.log('DomainCheckout: Registration failed:', result.message);
         throw new Error(result.message || 'Domain registration failed');
       }
     } catch (error: any) {
-      console.log('DomainCheckout: Token-based registration failed:', error.message);
-      // Attempt token refresh
-      console.log('DomainCheckout: Attempting token refresh');
-      const refreshed = await refreshToken();
-      if (refreshed) {
-        console.log('DomainCheckout: Token refreshed, retrying registration');
-        const authToken = getAuthToken();
-        if (!authToken) {
-          throw new Error('Authentication token missing after refresh');
-        }
-        const response = await fetch(`${BASE_URL}/api/v1/register`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${authToken}`,
-          },
-          credentials: 'include',
-          body: JSON.stringify(registrationData),
-        });
-        const result = await response.json();
-        if (response.ok && result.success) {
-          console.log('DomainCheckout: Registration successful after token refresh');
-          return result;
+      if (error.name === 'AbortError') {
+        throw new Error('Request timeout. Please check your internet connection and try again.');
+      }
+
+      if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+        throw new Error('Network connection failed. Please check your internet connection and try again.');
+      }
+
+      if (error.message.includes('401') || error.message.includes('Authentication')) {
+        try {
+          const refreshed = await refreshToken();
+          if (refreshed) {
+            const newAuthToken = getAuthToken();
+            if (!newAuthToken) {
+              throw new Error('Authentication token missing after refresh');
+            }
+
+            const retryController = new AbortController();
+            const retryTimeoutId = setTimeout(() => retryController.abort(), 30000);
+
+            const retryResponse = await fetch(`${BASE_URL}/api/v1/register`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${newAuthToken}`,
+              },
+              credentials: 'include',
+              body: JSON.stringify(registrationData),
+              signal: retryController.signal,
+            });
+
+            clearTimeout(retryTimeoutId);
+            const retryResult = await retryResponse.json();
+
+            if (retryResponse.ok && retryResult.success) {
+              return retryResult;
+            }
+          }
+        } catch (refreshError) {
+          console.error('Token refresh failed:', refreshError);
         }
       }
-      throw new Error(error.message || 'Authentication failed. Please sign in again.');
+
+      throw new Error(error.message || 'Registration failed. Please try again.');
     }
   };
 
   const handleCheckout = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
-    
+
     if (!validateForm()) {
-      console.log('DomainCheckout: Form validation failed:', JSON.stringify(errors, null, 2));
       return;
     }
 
     if (!isAuthenticated) {
-      console.error('DomainCheckout: User not authenticated');
       setErrors({ api: 'Please sign in to complete the registration.' });
       navigate('/signin?return=checkout&domain=' + encodeURIComponent(domain));
       return;
@@ -384,29 +402,23 @@ const DomainCheckout: React.FC = () => {
     try {
       setProcessingStep("Processing payment...");
       await new Promise(resolve => setTimeout(resolve, 2000));
-      console.log('DomainCheckout: Payment processing completed');
 
       setProcessingStep("Registering domain...");
       const registrationResult = await registerDomain();
-      
+
       if (!registrationResult.success) {
         throw new Error(registrationResult.message || 'Domain registration failed');
       }
 
       setProcessingStep("Registration complete! Redirecting...");
-      console.log('DomainCheckout: Registration successful, redirecting to console');
-      
       sessionStorage.removeItem('pendingCheckout');
-      
+
       setTimeout(() => {
         window.location.href = `${CONSOLE_URL}/domains?new=${encodeURIComponent(domain)}`;
       }, 2000);
-
     } catch (error: any) {
-      console.error('DomainCheckout: Checkout error:', error);
-      
       let errorMessage = 'An error occurred during registration. Please try again or contact support.';
-      
+
       if (error.message.includes('Authentication')) {
         errorMessage = 'Authentication failed. Please sign in again.';
         setTimeout(() => {
@@ -420,7 +432,7 @@ const DomainCheckout: React.FC = () => {
       } else if (error.message) {
         errorMessage = error.message;
       }
-      
+
       setErrors({ api: errorMessage });
       setIsProcessing(false);
       setProcessingStep("");
@@ -450,7 +462,7 @@ const DomainCheckout: React.FC = () => {
               {processingStep || "Processing..."}
             </h2>
             <p className="text-gray-600 mb-6">Please wait while we complete your domain registration.</p>
-            
+
             <div className="space-y-3 text-sm text-gray-600">
               <div className="flex items-center justify-between">
                 <span>Payment Processing</span>
@@ -494,7 +506,7 @@ const DomainCheckout: React.FC = () => {
             <ArrowLeft className="w-5 h-5" />
             <span>Back</span>
           </button>
-          
+
           <div className="text-center">
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Complete Your Domain Registration</h1>
             <p className="text-gray-600">
@@ -509,7 +521,7 @@ const DomainCheckout: React.FC = () => {
             <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-200">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-2xl font-bold flex items-center gap-3 text-primary">
-                  <MdDomain size={28} /> 
+                  <MdDomain size={28} />
                   Domain Summary
                 </h2>
                 <div className="flex items-center space-x-2">
@@ -525,7 +537,7 @@ const DomainCheckout: React.FC = () => {
                   )}
                 </div>
               </div>
-              
+
               <div className="bg-gradient-to-r from-primary/5 to-primary/10 rounded-xl p-4 border border-primary/20 mb-4">
                 <div className="flex items-center justify-between mb-3">
                   <div>
@@ -653,14 +665,68 @@ const DomainCheckout: React.FC = () => {
 
             <form onSubmit={handleCheckout} className="bg-white rounded-2xl shadow-sm p-6 border border-gray-200">
               <h2 className="text-xl font-bold text-primary mb-6">Registrant Contact Information</h2>
-              
+
               {errors.api && (
                 <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
                   <div className="text-red-600 text-sm">{errors.api}</div>
                 </div>
               )}
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Full Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="fullName"
+                    value={formData.fullName}
+                    onChange={handleInputChange}
+                    placeholder="John Doe"
+                    required
+                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${
+                      errors.fullName ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
+                  />
+                  {errors.fullName && <p className="text-red-600 text-sm mt-1">{errors.fullName}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Email <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    placeholder="john@example.com"
+                    required
+                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${
+                      errors.email ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
+                  />
+                  {errors.email && <p className="text-red-600 text-sm mt-1">{errors.email}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Phone <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="tel"
+                    name="phone"
+                    value={formData.phone}
+                    onChange={handleInputChange}
+                    placeholder="+254700000000"
+                    required
+                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${
+                      errors.phone ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
+                  />
+                  {errors.phone && <p className="text-red-600 text-sm mt-1">{errors.phone}</p>}
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Organization
@@ -746,7 +812,7 @@ const DomainCheckout: React.FC = () => {
                   />
                   {errors.postalCode && <p className="text-red-600 text-sm mt-1">{errors.postalCode}</p>}
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Country <span className="text-red-500">*</span>
@@ -782,7 +848,7 @@ const DomainCheckout: React.FC = () => {
                   <span className="mt-2 font-medium">M-Pesa</span>
                   <span className="text-xs text-gray-500">Mobile Money</span>
                 </button>
-                
+
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("card")}
@@ -794,7 +860,7 @@ const DomainCheckout: React.FC = () => {
                   <span className="mt-2 font-medium">Card</span>
                   <span className="text-xs text-gray-500">Visa, Mastercard</span>
                 </button>
-                
+
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("paypal")}
@@ -812,7 +878,7 @@ const DomainCheckout: React.FC = () => {
                 <label className="flex items-start space-x-2">
                   <input type="checkbox" required className="mt-1 text-primary" />
                   <span className="text-sm text-gray-600">
-                    I agree to the <a href="#" className="text-primary hover:underline">Terms of Service</a> and 
+                    I agree to the <a href="#" className="text-primary hover:underline">Terms of Service</a> and
                     <a href="#" className="text-primary hover:underline"> Privacy Policy</a>
                   </span>
                 </label>
@@ -842,7 +908,7 @@ const DomainCheckout: React.FC = () => {
                 <DollarSign className="w-5 h-5" />
                 <span>Order Summary</span>
               </h2>
-              
+
               <div className="space-y-3 mb-4">
                 <div className="flex justify-between text-gray-700">
                   <span>Domain Registration ({registrationYears} year{registrationYears > 1 ? 's' : ''})</span>
@@ -958,7 +1024,7 @@ const DomainCheckout: React.FC = () => {
             <h3 className="text-xl font-bold text-gray-900 mb-2">Why Choose DigitalKenya Registration?</h3>
             <p className="text-gray-600">Trusted by thousands with live WHMCS integration</p>
           </div>
-          
+
           <div className="grid md:grid-cols-4 gap-6 text-center">
             <div className="flex flex-col items-center space-y-2">
               <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
@@ -967,7 +1033,7 @@ const DomainCheckout: React.FC = () => {
               <h4 className="font-semibold text-gray-900">Instant Activation</h4>
               <p className="text-sm text-gray-600">Your domain is active immediately after registration</p>
             </div>
-            
+
             <div className="flex flex-col items-center space-y-2">
               <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
                 <DollarSign className="w-6 h-6 text-primary" />
@@ -975,7 +1041,7 @@ const DomainCheckout: React.FC = () => {
               <h4 className="font-semibold text-gray-900">Live Pricing</h4>
               <p className="text-sm text-gray-600">Real-time pricing from WHMCS with no hidden fees</p>
             </div>
-            
+
             <div className="flex flex-col items-center space-y-2">
               <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
                 <Users className="w-6 h-6 text-primary" />
@@ -983,7 +1049,7 @@ const DomainCheckout: React.FC = () => {
               <h4 className="font-semibold text-gray-900">Local Support</h4>
               <p className="text-sm text-gray-600">24/7 Kenyan customer support team</p>
             </div>
-            
+
             <div className="flex flex-col items-center space-y-2">
               <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
                 <CheckCircle className="w-6 h-6 text-primary" />
@@ -1002,7 +1068,7 @@ const DomainCheckout: React.FC = () => {
               <div className="text-sm">
                 <h4 className="font-semibold text-blue-900 mb-1">Live Pricing Information</h4>
                 <p className="text-blue-800">
-                  This checkout uses live pricing from our WHMCS system ({pricing.source}). 
+                  This checkout uses live pricing from our WHMCS system ({pricing.source}).
                   Prices include all applicable taxes and fees. Multi-year registrations may offer savings.
                   Your renewal rate will be {formatPrice(pricing.renewal?.['1_year'] || currentPrice)} per year.
                 </p>

@@ -13,7 +13,7 @@ export function Footer() {
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-primary">
                 <Globe className="h-5 w-5 text-white" />
               </div>
-              <span className="text-xl font-bold text-foreground">DomainPro</span>
+              <span className="text-xl font-bold text-foreground">Digi Kenya-KENIC</span>
             </div>
             <p className="text-muted-foreground">
               Professional domain registration with world-class support. 
@@ -68,11 +68,11 @@ export function Footer() {
               </div>
               <div className="flex items-center space-x-2">
                 <Phone className="h-4 w-4" />
-                <span>+1 (555) 123-4567</span>
+                <span>+254706400432</span>
               </div>
               <div className="flex items-center space-x-2">
                 <MapPin className="h-4 w-4" />
-                <span>San Francisco, CA</span>
+                <span>Jkuat, Kenya</span>
               </div>
             </div>
             
