@@ -1,14 +1,36 @@
-// Updated DomainCheckout Component
+// Enhanced DomainCheckout Component with Live Pricing Integration
 
 import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { FaMoneyBill, FaCreditCard, FaPaypal } from "react-icons/fa";
 import { MdDomain, MdSecurity, MdSupport } from "react-icons/md";
-import { CheckCircle, ArrowLeft, Shield, Clock, Users, Loader2 } from "lucide-react";
+import { CheckCircle, ArrowLeft, Shield, Clock, Users, Loader2, Info, DollarSign } from "lucide-react";
 import { useAuth } from '@/context/AuthContext';
 
 const BASE_URL = 'https://api.digikenya.co.ke';
 const CONSOLE_URL = 'https://console.digikenya.co.ke';
+
+interface DomainPricing {
+  currency: string;
+  registration: {
+    '1_year'?: number;
+    '2_years'?: number;
+    '3_years'?: number;
+    '5_years'?: number;
+    '10_years'?: number;
+  };
+  renewal: {
+    '1_year'?: number;
+    '2_years'?: number;
+    '3_years'?: number;
+    '5_years'?: number;
+    '10_years'?: number;
+  };
+  transfer?: any;
+  setup_fee: number;
+  taxes?: any;
+  source?: string;
+}
 
 interface CheckoutState {
   domain: string;
@@ -17,11 +39,14 @@ interface CheckoutState {
   isQuickCheckout: boolean;
   registrar?: string;
   extension?: Record<string, any>;
+  pricing?: DomainPricing;
   returnUrl?: string;
 }
 
 const DomainCheckout: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState("mpesa");
+  const [registrationYears, setRegistrationYears] = useState(1);
+  const [showPricingBreakdown, setShowPricingBreakdown] = useState(false);
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -48,8 +73,8 @@ const DomainCheckout: React.FC = () => {
     console.log('DomainCheckout: Initializing checkout state');
     const defaultState: CheckoutState = {
       domain: urlDomain,
-      price: 1200,
-      renewal: 1200,
+      price: 1500,
+      renewal: 1500,
       isQuickCheckout: false,
     };
 
@@ -91,11 +116,41 @@ const DomainCheckout: React.FC = () => {
     return defaultState;
   });
 
-  const { domain, price, renewal, isQuickCheckout, registrar, extension } = checkoutState;
+  const { domain, price, renewal, isQuickCheckout, registrar, extension, pricing } = checkoutState;
 
+  // Calculate pricing based on live pricing data and selected years
+  const getYearlyPrice = (years: number): number => {
+    if (!pricing) return price * years;
+    
+    const yearKey = `${years}_year${years > 1 ? 's' : ''}` as keyof typeof pricing.registration;
+    const yearlyPrice = pricing.registration[yearKey];
+    
+    if (yearlyPrice) return yearlyPrice;
+    
+    // Fallback to multiplication if specific year pricing not available
+    const basePrice = pricing.registration['1_year'] || price;
+    return basePrice * years;
+  };
+
+  const currentPrice = getYearlyPrice(registrationYears);
+  const setupFee = pricing?.setup_fee || 0;
   const taxRate = 0.16;
-  const tax = Math.round(price * taxRate);
-  const total = price + tax;
+  const subtotal = currentPrice + setupFee;
+  const tax = Math.round(subtotal * taxRate);
+  const total = subtotal + tax;
+
+  // Format price display
+  const formatPrice = (amount: number): string => {
+    return `KSh ${amount.toLocaleString()}`;
+  };
+
+  // Get savings compared to yearly payments
+  const getSavings = (years: number): number => {
+    if (years <= 1 || !pricing) return 0;
+    const yearlyTotal = (pricing.registration['1_year'] || price) * years;
+    const multiYearPrice = getYearlyPrice(years);
+    return Math.max(0, yearlyTotal - multiYearPrice);
+  };
 
   useEffect(() => {
     console.log('DomainCheckout: Initialized checkout state:', JSON.stringify(checkoutState, null, 2));
@@ -111,6 +166,7 @@ const DomainCheckout: React.FC = () => {
         isQuickCheckout,
         registrar,
         extension,
+        pricing,
         returnUrl: window.location.pathname + window.location.search
       };
       console.log('DomainCheckout: Storing checkout data in sessionStorage:', JSON.stringify(checkoutData, null, 2));
@@ -118,7 +174,7 @@ const DomainCheckout: React.FC = () => {
       
       navigate('/signin?return=checkout&domain=' + encodeURIComponent(domain));
     }
-  }, [isAuthenticated, isLoading, navigate, domain, price, renewal, isQuickCheckout, registrar, extension]);
+  }, [isAuthenticated, isLoading, navigate, domain, price, renewal, isQuickCheckout, registrar, extension, pricing]);
 
   useEffect(() => {
     if (isAuthenticated && user) {
@@ -202,7 +258,7 @@ const DomainCheckout: React.FC = () => {
     const { firstName, lastName } = splitFullName(formData.fullName);
     const registrationData = {
       domain,
-      years: 1,
+      years: registrationYears,
       auto_renew: true,
       privacy_protection: false,
       dns_management: true,
@@ -375,7 +431,7 @@ const DomainCheckout: React.FC = () => {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-green-600 mx-auto mb-4" />
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
           <p className="text-gray-600">Loading...</p>
         </div>
       </div>
@@ -387,8 +443,8 @@ const DomainCheckout: React.FC = () => {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full mx-4">
           <div className="text-center">
-            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Loader2 className="w-8 h-8 animate-spin text-green-600" />
+            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>
             <h2 className="text-xl font-bold text-gray-900 mb-2">
               {processingStep || "Processing..."}
@@ -405,7 +461,7 @@ const DomainCheckout: React.FC = () => {
                 {processingStep.includes("Registering") || processingStep.includes("complete") ? (
                   <CheckCircle className="w-5 h-5 text-green-600" />
                 ) : (
-                  <div className="w-5 h-5 border-2 border-gray-300 rounded-full border-t-green-600 animate-spin"></div>
+                  <div className="w-5 h-5 border-2 border-gray-300 rounded-full border-t-primary animate-spin"></div>
                 )}
               </div>
               <div className="flex items-center justify-between">
@@ -449,21 +505,29 @@ const DomainCheckout: React.FC = () => {
 
         <div className="grid lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
+            {/* Enhanced Domain Summary with Live Pricing */}
             <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-200">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-bold flex items-center gap-3 text-green-600">
+                <h2 className="text-2xl font-bold flex items-center gap-3 text-primary">
                   <MdDomain size={28} /> 
                   Domain Summary
                 </h2>
-                {isQuickCheckout && (
-                  <div className="bg-green-100 text-green-800 text-xs font-bold px-3 py-1 rounded-full">
-                    QUICK CHECKOUT
-                  </div>
-                )}
+                <div className="flex items-center space-x-2">
+                  {isQuickCheckout && (
+                    <div className="bg-primary/10 text-primary text-xs font-bold px-3 py-1 rounded-full">
+                      QUICK CHECKOUT
+                    </div>
+                  )}
+                  {pricing?.source && (
+                    <div className="bg-green-100 text-green-800 text-xs font-bold px-3 py-1 rounded-full">
+                      {pricing.source === 'whmcs' ? 'LIVE PRICING' : 'ESTIMATED'}
+                    </div>
+                  )}
+                </div>
               </div>
               
-              <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-4 border border-green-200">
-                <div className="flex items-center justify-between">
+              <div className="bg-gradient-to-r from-primary/5 to-primary/10 rounded-xl p-4 border border-primary/20 mb-4">
+                <div className="flex items-center justify-between mb-3">
                   <div>
                     <p className="text-xl font-bold text-gray-900">{domain}</p>
                     <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
@@ -471,34 +535,124 @@ const DomainCheckout: React.FC = () => {
                         <CheckCircle className="w-4 h-4 text-green-600" />
                         <span>Available</span>
                       </span>
-                      <span>1 Year Registration</span>
+                      <span>{registrationYears} Year{registrationYears > 1 ? 's' : ''} Registration</span>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-lg font-bold text-green-600">KES {price.toLocaleString()}</p>
-                    <p className="text-xs text-gray-500">Renewal: KES {renewal.toLocaleString()}/year</p>
+                    <p className="text-lg font-bold text-primary">{formatPrice(currentPrice)}</p>
+                    {setupFee > 0 && (
+                      <p className="text-xs text-gray-500">+ {formatPrice(setupFee)} setup</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Registration Period Selector */}
+                <div className="border-t border-primary/20 pt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-gray-700">Registration Period:</span>
+                    <button
+                      onClick={() => setShowPricingBreakdown(!showPricingBreakdown)}
+                      className="text-xs text-primary hover:text-primary/80 flex items-center space-x-1"
+                    >
+                      <Info className="w-3 h-3" />
+                      <span>View Pricing</span>
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[1, 2, 3].map((years) => (
+                      <button
+                        key={years}
+                        type="button"
+                        onClick={() => setRegistrationYears(years)}
+                        className={`p-2 rounded-lg text-sm font-medium transition-all ${
+                          registrationYears === years
+                            ? 'bg-primary text-primary-foreground shadow-md'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        <div>{years} Year{years > 1 ? 's' : ''}</div>
+                        <div className="text-xs opacity-75">
+                          {formatPrice(getYearlyPrice(years))}
+                        </div>
+                        {getSavings(years) > 0 && (
+                          <div className="text-xs text-green-600">
+                            Save {formatPrice(getSavings(years))}
+                          </div>
+                        )}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>
 
-              <div className="mt-4 grid grid-cols-3 gap-4 text-center text-xs">
+              {/* Pricing Breakdown */}
+              {showPricingBreakdown && pricing && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                  <h4 className="font-semibold text-blue-900 mb-3 flex items-center space-x-2">
+                    <DollarSign className="w-4 h-4" />
+                    <span>Live Pricing Details</span>
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <h5 className="font-medium text-blue-800 mb-2">Registration Pricing</h5>
+                      <div className="space-y-1 text-blue-700">
+                        {pricing.registration['1_year'] && (
+                          <div className="flex justify-between">
+                            <span>1 Year:</span>
+                            <span>{formatPrice(pricing.registration['1_year'])}</span>
+                          </div>
+                        )}
+                        {pricing.registration['2_years'] && (
+                          <div className="flex justify-between">
+                            <span>2 Years:</span>
+                            <span>{formatPrice(pricing.registration['2_years'])}</span>
+                          </div>
+                        )}
+                        {pricing.registration['3_years'] && (
+                          <div className="flex justify-between">
+                            <span>3 Years:</span>
+                            <span>{formatPrice(pricing.registration['3_years'])}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <h5 className="font-medium text-blue-800 mb-2">Renewal Pricing</h5>
+                      <div className="space-y-1 text-blue-700">
+                        {pricing.renewal['1_year'] && (
+                          <div className="flex justify-between">
+                            <span>Per Year:</span>
+                            <span>{formatPrice(pricing.renewal['1_year'])}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between">
+                          <span>Setup Fee:</span>
+                          <span>{formatPrice(setupFee)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-4 text-center text-xs">
                 <div className="flex flex-col items-center space-y-1">
-                  <Clock className="w-5 h-5 text-green-600" />
+                  <Clock className="w-5 h-5 text-primary" />
                   <span className="text-gray-600">Instant Setup</span>
                 </div>
                 <div className="flex flex-col items-center space-y-1">
-                  <Shield className="w-5 h-5 text-green-600" />
+                  <Shield className="w-5 h-5 text-primary" />
                   <span className="text-gray-600">DNS Included</span>
                 </div>
                 <div className="flex flex-col items-center space-y-1">
-                  <Users className="w-5 h-5 text-green-600" />
+                  <Users className="w-5 h-5 text-primary" />
                   <span className="text-gray-600">24/7 Support</span>
                 </div>
               </div>
             </div>
 
             <form onSubmit={handleCheckout} className="bg-white rounded-2xl shadow-sm p-6 border border-gray-200">
-              <h2 className="text-xl font-bold text-green-600 mb-6">Registrant Contact Information</h2>
+              <h2 className="text-xl font-bold text-primary mb-6">Registrant Contact Information</h2>
               
               {errors.api && (
                 <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -509,60 +663,6 @@ const DomainCheckout: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Full Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="fullName"
-                    value={formData.fullName}
-                    onChange={handleInputChange}
-                    placeholder="John Doe"
-                    required
-                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                      errors.fullName ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                    }`}
-                  />
-                  {errors.fullName && <p className="text-red-600 text-sm mt-1">{errors.fullName}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Email <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    placeholder="john@example.com"
-                    required
-                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                      errors.email ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                    }`}
-                  />
-                  {errors.email && <p className="text-red-600 text-sm mt-1">{errors.email}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Phone <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="tel"
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleInputChange}
-                    placeholder="+254700000000"
-                    required
-                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                      errors.phone ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                    }`}
-                  />
-                  {errors.phone && <p className="text-red-600 text-sm mt-1">{errors.phone}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
                     Organization
                   </label>
                   <input
@@ -571,7 +671,7 @@ const DomainCheckout: React.FC = () => {
                     value={formData.organization}
                     onChange={handleInputChange}
                     placeholder="My Company"
-                    className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
                   />
                 </div>
 
@@ -586,7 +686,7 @@ const DomainCheckout: React.FC = () => {
                     onChange={handleInputChange}
                     placeholder="123 Main St"
                     required
-                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
+                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${
                       errors.address ? 'border-red-300 bg-red-50' : 'border-gray-300'
                     }`}
                   />
@@ -604,7 +704,7 @@ const DomainCheckout: React.FC = () => {
                     onChange={handleInputChange}
                     placeholder="Nairobi"
                     required
-                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
+                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${
                       errors.city ? 'border-red-300 bg-red-50' : 'border-gray-300'
                     }`}
                   />
@@ -622,7 +722,7 @@ const DomainCheckout: React.FC = () => {
                     onChange={handleInputChange}
                     placeholder="Nairobi"
                     required
-                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
+                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${
                       errors.state ? 'border-red-300 bg-red-50' : 'border-gray-300'
                     }`}
                   />
@@ -640,7 +740,7 @@ const DomainCheckout: React.FC = () => {
                     onChange={handleInputChange}
                     placeholder="00100"
                     required
-                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
+                    className={`w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${
                       errors.postalCode ? 'border-red-300 bg-red-50' : 'border-gray-300'
                     }`}
                   />
@@ -656,7 +756,7 @@ const DomainCheckout: React.FC = () => {
                     value={formData.country}
                     onChange={handleInputChange}
                     required
-                    className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
                   >
                     <option value="KE">Kenya</option>
                     <option value="UG">Uganda</option>
@@ -669,16 +769,16 @@ const DomainCheckout: React.FC = () => {
                 </div>
               </div>
 
-              <h2 className="text-xl font-bold text-green-600 mb-4">Payment Method</h2>
+              <h2 className="text-xl font-bold text-primary mb-4">Payment Method</h2>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("mpesa")}
                   className={`flex flex-col items-center justify-center p-4 border-2 rounded-xl transition-all ${
-                    paymentMethod === "mpesa" ? "border-green-500 bg-green-50 shadow-md" : "border-gray-300 hover:border-gray-400"
+                    paymentMethod === "mpesa" ? "border-primary bg-primary/5 shadow-md" : "border-gray-300 hover:border-gray-400"
                   }`}
                 >
-                  <FaMoneyBill size={28} className={paymentMethod === "mpesa" ? "text-green-600" : "text-gray-500"} />
+                  <FaMoneyBill size={28} className={paymentMethod === "mpesa" ? "text-primary" : "text-gray-500"} />
                   <span className="mt-2 font-medium">M-Pesa</span>
                   <span className="text-xs text-gray-500">Mobile Money</span>
                 </button>
@@ -687,10 +787,10 @@ const DomainCheckout: React.FC = () => {
                   type="button"
                   onClick={() => setPaymentMethod("card")}
                   className={`flex flex-col items-center justify-center p-4 border-2 rounded-xl transition-all ${
-                    paymentMethod === "card" ? "border-green-500 bg-green-50 shadow-md" : "border-gray-300 hover:border-gray-400"
+                    paymentMethod === "card" ? "border-primary bg-primary/5 shadow-md" : "border-gray-300 hover:border-gray-400"
                   }`}
                 >
-                  <FaCreditCard size={28} className={paymentMethod === "card" ? "text-green-600" : "text-gray-500"} />
+                  <FaCreditCard size={28} className={paymentMethod === "card" ? "text-primary" : "text-gray-500"} />
                   <span className="mt-2 font-medium">Card</span>
                   <span className="text-xs text-gray-500">Visa, Mastercard</span>
                 </button>
@@ -699,10 +799,10 @@ const DomainCheckout: React.FC = () => {
                   type="button"
                   onClick={() => setPaymentMethod("paypal")}
                   className={`flex flex-col items-center justify-center p-4 border-2 rounded-xl transition-all ${
-                    paymentMethod === "paypal" ? "border-green-500 bg-green-50 shadow-md" : "border-gray-300 hover:border-gray-400"
+                    paymentMethod === "paypal" ? "border-primary bg-primary/5 shadow-md" : "border-gray-300 hover:border-gray-400"
                   }`}
                 >
-                  <FaPaypal size={28} className={paymentMethod === "paypal" ? "text-green-600" : "text-gray-500"} />
+                  <FaPaypal size={28} className={paymentMethod === "paypal" ? "text-primary" : "text-gray-500"} />
                   <span className="mt-2 font-medium">PayPal</span>
                   <span className="text-xs text-gray-500">Digital Wallet</span>
                 </button>
@@ -710,10 +810,10 @@ const DomainCheckout: React.FC = () => {
 
               <div className="mb-6">
                 <label className="flex items-start space-x-2">
-                  <input type="checkbox" required className="mt-1 text-green-600" />
+                  <input type="checkbox" required className="mt-1 text-primary" />
                   <span className="text-sm text-gray-600">
-                    I agree to the <a href="#" className="text-green-600 hover:underline">Terms of Service</a> and 
-                    <a href="#" className="text-green-600 hover:underline"> Privacy Policy</a>
+                    I agree to the <a href="#" className="text-primary hover:underline">Terms of Service</a> and 
+                    <a href="#" className="text-primary hover:underline"> Privacy Policy</a>
                   </span>
                 </label>
               </div>
@@ -721,7 +821,7 @@ const DomainCheckout: React.FC = () => {
               <button
                 type="submit"
                 disabled={isProcessing}
-                className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg hover:from-green-600 hover:to-green-700 transition-all transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-gradient-to-r from-primary to-primary/80 text-primary-foreground py-4 rounded-xl font-bold text-lg shadow-lg hover:from-primary/90 hover:to-primary/70 transition-all transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isProcessing ? (
                   <div className="flex items-center justify-center">
@@ -729,43 +829,84 @@ const DomainCheckout: React.FC = () => {
                     Processing...
                   </div>
                 ) : (
-                  `Complete Registration - KES ${total.toLocaleString()}`
+                  `Complete Registration - ${formatPrice(total)}`
                 )}
               </button>
             </form>
           </div>
 
+          {/* Enhanced Order Summary with Live Pricing */}
           <div className="space-y-6">
             <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-200 sticky top-4">
-              <h2 className="text-xl font-bold text-green-600 mb-4">Order Summary</h2>
+              <h2 className="text-xl font-bold text-primary mb-4 flex items-center space-x-2">
+                <DollarSign className="w-5 h-5" />
+                <span>Order Summary</span>
+              </h2>
               
               <div className="space-y-3 mb-4">
                 <div className="flex justify-between text-gray-700">
-                  <span>Domain Registration</span>
-                  <span>KES {price.toLocaleString()}</span>
+                  <span>Domain Registration ({registrationYears} year{registrationYears > 1 ? 's' : ''})</span>
+                  <span>{formatPrice(currentPrice)}</span>
                 </div>
+                {setupFee > 0 && (
+                  <div className="flex justify-between text-gray-700">
+                    <span>Setup Fee</span>
+                    <span>{formatPrice(setupFee)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-gray-700">
                   <span>VAT (16%)</span>
-                  <span>KES {tax.toLocaleString()}</span>
+                  <span>{formatPrice(tax)}</span>
                 </div>
                 <hr className="my-3" />
                 <div className="flex justify-between font-bold text-lg text-gray-900">
                   <span>Total</span>
-                  <span>KES {total.toLocaleString()}</span>
+                  <span>{formatPrice(total)}</span>
                 </div>
               </div>
 
+              {/* Live Pricing Indicator */}
+              {pricing?.source && (
+                <div className="mb-4 p-3 bg-green-50 rounded-lg border border-green-200">
+                  <div className="flex items-center space-x-2 text-sm">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <span className="text-green-800">
+                      {pricing.source === 'whmcs' ? 'Live WHMCS Pricing' : 'Current Market Pricing'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-green-700 mt-1">
+                    Pricing updated in real-time from our system
+                  </p>
+                </div>
+              )}
+
+              {/* Domain Features */}
               <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600">
-                <p>• Domain registered for 1 year</p>
+                <p>• Domain registered for {registrationYears} year{registrationYears > 1 ? 's' : ''}</p>
                 <p>• Free DNS management included</p>
                 <p>• 24/7 customer support</p>
                 <p>• Auto-renewal enabled</p>
+                {pricing?.renewal?.['1_year'] && (
+                  <p>• Renewal: {formatPrice(pricing.renewal['1_year'])}/year</p>
+                )}
               </div>
+
+              {/* Multi-year Savings */}
+              {getSavings(registrationYears) > 0 && (
+                <div className="mt-4 p-3 bg-primary/5 rounded-lg border border-primary/20">
+                  <div className="flex items-center space-x-2 text-sm">
+                    <CheckCircle className="w-4 h-4 text-primary" />
+                    <span className="text-primary font-medium">
+                      You save {formatPrice(getSavings(registrationYears))} with {registrationYears}-year registration
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-200">
               <h3 className="font-bold text-gray-900 mb-4 flex items-center">
-                <MdSecurity className="w-5 h-5 text-green-600 mr-2" />
+                <MdSecurity className="w-5 h-5 text-primary mr-2" />
                 Secure Registration
               </h3>
               <div className="space-y-3 text-sm text-gray-600">
@@ -779,7 +920,7 @@ const DomainCheckout: React.FC = () => {
                 </div>
                 <div className="flex items-center space-x-2">
                   <CheckCircle className="w-4 h-4 text-green-600" />
-                  <span>ICANN Compliant</span>
+                  <span>KENIC Compliant</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <CheckCircle className="w-4 h-4 text-green-600" />
@@ -790,7 +931,7 @@ const DomainCheckout: React.FC = () => {
 
             <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-200">
               <h3 className="font-bold text-gray-900 mb-4 flex items-center">
-                <MdSupport className="w-5 h-5 text-green-600 mr-2" />
+                <MdSupport className="w-5 h-5 text-primary mr-2" />
                 Need Help?
               </h3>
               <div className="space-y-3 text-sm">
@@ -811,46 +952,64 @@ const DomainCheckout: React.FC = () => {
           </div>
         </div>
 
+        {/* Enhanced Benefits Section */}
         <div className="mt-12 bg-white rounded-2xl shadow-sm p-6 border border-gray-200">
           <div className="text-center mb-6">
-            <h3 className="text-xl font-bold text-gray-900 mb-2">Why Choose Our Domain Registration?</h3>
-            <p className="text-gray-600">Trusted by thousands of customers worldwide</p>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Why Choose DigitalKenya Registration?</h3>
+            <p className="text-gray-600">Trusted by thousands with live WHMCS integration</p>
           </div>
           
           <div className="grid md:grid-cols-4 gap-6 text-center">
             <div className="flex flex-col items-center space-y-2">
-              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                <Clock className="w-6 h-6 text-green-600" />
+              <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
+                <Clock className="w-6 h-6 text-primary" />
               </div>
               <h4 className="font-semibold text-gray-900">Instant Activation</h4>
               <p className="text-sm text-gray-600">Your domain is active immediately after registration</p>
             </div>
             
             <div className="flex flex-col items-center space-y-2">
-              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                <Shield className="w-6 h-6 text-green-600" />
+              <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
+                <DollarSign className="w-6 h-6 text-primary" />
               </div>
-              <h4 className="font-semibold text-gray-900">Secure Registration</h4>
-              <p className="text-sm text-gray-600">Bank-level security for all transactions</p>
+              <h4 className="font-semibold text-gray-900">Live Pricing</h4>
+              <p className="text-sm text-gray-600">Real-time pricing from WHMCS with no hidden fees</p>
             </div>
             
             <div className="flex flex-col items-center space-y-2">
-              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                <Users className="w-6 h-6 text-green-600" />
+              <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
+                <Users className="w-6 h-6 text-primary" />
               </div>
-              <h4 className="font-semibold text-gray-900">Expert Support</h4>
-              <p className="text-sm text-gray-600">24/7 customer support from domain experts</p>
+              <h4 className="font-semibold text-gray-900">Local Support</h4>
+              <p className="text-sm text-gray-600">24/7 Kenyan customer support team</p>
             </div>
             
             <div className="flex flex-col items-center space-y-2">
-              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                <CheckCircle className="w-6 h-6 text-green-600" />
+              <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
+                <CheckCircle className="w-6 h-6 text-primary" />
               </div>
-              <h4 className="font-semibold text-gray-900">Money-Back Guarantee</h4>
-              <p className="text-sm text-gray-600">30-day guarantee for peace of mind</p>
+              <h4 className="font-semibold text-gray-900">KENIC Accredited</h4>
+              <p className="text-sm text-gray-600">Official registrar with full compliance</p>
             </div>
           </div>
         </div>
+
+        {/* Pricing Transparency Notice */}
+        {pricing && (
+          <div className="mt-8 bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <div className="flex items-start space-x-3">
+              <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div className="text-sm">
+                <h4 className="font-semibold text-blue-900 mb-1">Live Pricing Information</h4>
+                <p className="text-blue-800">
+                  This checkout uses live pricing from our WHMCS system ({pricing.source}). 
+                  Prices include all applicable taxes and fees. Multi-year registrations may offer savings.
+                  Your renewal rate will be {formatPrice(pricing.renewal?.['1_year'] || currentPrice)} per year.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
