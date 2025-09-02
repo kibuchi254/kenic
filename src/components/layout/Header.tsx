@@ -267,7 +267,11 @@ export function Header({ cartCount = 0 }: HeaderProps) {
       .slice(0, 2);
   };
 
-  const getStatusColor = (status: string) => {
+    const getStatusColor = (status?: string) => {
+    if (!status) {
+      return 'bg-gray-100 text-gray-800';
+    }
+    
     switch (status.toLowerCase()) {
       case 'active':
         return 'bg-green-100 text-green-800';
