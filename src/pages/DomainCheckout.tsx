@@ -310,7 +310,7 @@ const DomainCheckout: React.FC = () => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-      const response = await fetch(`${BASE_URL}/api/v1/register`, {
+      const response = await fetch(`${BASE_URL}/api/domains/v1/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -356,7 +356,7 @@ const DomainCheckout: React.FC = () => {
             const retryController = new AbortController();
             const retryTimeoutId = setTimeout(() => retryController.abort(), 30000);
 
-            const retryResponse = await fetch(`${BASE_URL}/api/v1/register`, {
+            const retryResponse = await fetch(`${BASE_URL}/api/domains/v1/register`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',

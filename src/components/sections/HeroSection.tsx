@@ -209,7 +209,7 @@ export const HeroSection = () => {
   const getDomainPricing = async (extension: string): Promise<DomainPricing | null> => {
     try {
       const response = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/api/v1/pricing/${extension}`,
+        `${import.meta.env.VITE_API_BASE_URL}/api/v1/domains/pricing/${extension}`,
         {
           headers: {
             'Accept': 'application/json',
@@ -235,7 +235,7 @@ export const HeroSection = () => {
       console.log(`[HeroSection] Checking availability with pricing for: ${domain}`);
       
       const response = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/api/v1/availability/check`,
+        `${import.meta.env.VITE_API_BASE_URL}/api/v1/domains/availability/check`,
         {
           params: { 
             domain: domain.trim().toLowerCase(),
