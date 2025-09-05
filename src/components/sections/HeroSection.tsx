@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Shield, Zap, Globe, Check, ArrowRight, Star, Wifi, Link, Server, Cloud, Info, DollarSign } from 'lucide-react';
+import { Search, Shield, Zap, Globe, Check, ArrowRight, Star, Wifi, Link, Server, Cloud, Info, DollarSign, Loader2 } from 'lucide-react';
 import axios from 'axios';
 
 interface DomainPricing {
@@ -36,6 +36,7 @@ interface DomainSuggestion {
   available: boolean | null;
   pricing?: DomainPricing | null;
   price: number;
+  isLoading?: boolean;
 }
 
 interface KEExtension {
@@ -58,6 +59,72 @@ interface AnimatedNode {
   opacity: number;
 }
 
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+  expiry: number;
+}
+
+// Cache utility class
+class DomainCache {
+  private static instance: DomainCache;
+  private cache = new Map<string, CacheEntry>();
+  private readonly DEFAULT_EXPIRY = 5 * 60 * 1000; // 5 minutes
+
+  static getInstance(): DomainCache {
+    if (!DomainCache.instance) {
+      DomainCache.instance = new DomainCache();
+    }
+    return DomainCache.instance;
+  }
+
+  set(key: string, data: any, customExpiry?: number): void {
+    const expiry = customExpiry || this.DEFAULT_EXPIRY;
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now(),
+      expiry: Date.now() + expiry
+    });
+  }
+
+  get(key: string): any | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    
+    if (Date.now() > entry.expiry) {
+      this.cache.delete(key);
+      return null;
+    }
+    
+    return entry.data;
+  }
+
+  has(key: string): boolean {
+    return this.get(key) !== null;
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
+// Debounce hook
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
 export const HeroSection = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -69,16 +136,34 @@ export const HeroSection = () => {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [animatedNodes, setAnimatedNodes] = useState<AnimatedNode[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isInputFocused, setIsInputFocused] = useState(false);
   const navigate = useNavigate();
+  
+  // Debounced search query
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
+  
+  // Cache instance
+  const cache = DomainCache.getInstance();
+  
+  // Request deduplication
+  const activeRequests = useRef(new Map<string, Promise<any>>());
 
   // All available .ke extensions with their details
-  const allKeExtensions: KEExtension[] = [
+  const allKeExtensions: KEExtension[] = useMemo(() => [
     { 
       ext: '.co.ke', 
       desc: 'For commercial enterprises and businesses', 
       popular: true, 
       category: 'Commercial',
       eligibility: 'Any individual or organization',
+      priceDisplay: 'Loading...'
+    },
+    { 
+      ext: '.me.ke', 
+      desc: 'For personal websites and individuals', 
+      popular: true, 
+      category: 'Personal',
+      eligibility: 'Any individual',
       priceDisplay: 'Loading...'
     },
     { 
@@ -120,16 +205,8 @@ export const HeroSection = () => {
       category: 'Education',
       eligibility: 'Schools and colleges',
       priceDisplay: 'Loading...'
-    },
-    { 
-      ext: '.me.ke', 
-      desc: 'For personal websites and individuals', 
-      popular: true, 
-      category: 'Personal',
-      eligibility: 'Any individual',
-      priceDisplay: 'Loading...'
     }
-  ];
+  ], []);
 
   // Generate network nodes for background animation
   useEffect(() => {
@@ -168,89 +245,174 @@ export const HeroSection = () => {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
-  // Load pricing for all .ke extensions on component mount
+  // Preload popular extensions on mount
   useEffect(() => {
-    loadAllExtensionPricing();
+    preloadPopularExtensions();
   }, []);
 
-  // Load pricing for all .ke extensions
-  const loadAllExtensionPricing = async () => {
-    setLoadingExtensions(true);
+  // Auto-search when debounced query changes
+  useEffect(() => {
+    if (debouncedSearchQuery.trim().length >= 2) {
+      handleDebouncedSearch(debouncedSearchQuery);
+    } else {
+      setShowSuggestions(false);
+      setSuggestions([]);
+      setError(null);
+    }
+  }, [debouncedSearchQuery]);
+
+  // Deduplicated API request helper
+  const makeRequest = useCallback(async <T>(key: string, requestFn: () => Promise<T>): Promise<T> => {
+    // Check if we already have an active request for this key
+    if (activeRequests.current.has(key)) {
+      return activeRequests.current.get(key) as Promise<T>;
+    }
+
+    // Create new request
+    const request = requestFn().finally(() => {
+      activeRequests.current.delete(key);
+    });
+
+    activeRequests.current.set(key, request);
+    return request;
+  }, []);
+
+  // Enhanced caching for domain pricing
+  const getDomainPricing = useCallback(async (extension: string): Promise<DomainPricing | null> => {
+    const cacheKey = `pricing:${extension}`;
     
-    const updatedExtensions = await Promise.all(
-      allKeExtensions.map(async (extension) => {
-        try {
-          const pricing = await getDomainPricing(extension.ext);
-          const displayPrice = pricing && pricing.registration['1_year'] 
-            ? `KSh ${pricing.registration['1_year'].toLocaleString()}/year`
-            : 'Contact for pricing';
-          
-          return {
-            ...extension,
-            pricing,
-            priceDisplay: displayPrice
-          };
-        } catch (error) {
-          console.error(`Error loading pricing for ${extension.ext}:`, error);
-          return {
-            ...extension,
-            pricing: null,
-            priceDisplay: 'Price unavailable'
-          };
-        }
-      })
-    );
+    // Check cache first
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      console.log(`[Cache] Using cached pricing for ${extension}`);
+      return cached;
+    }
 
-    setKeExtensions(updatedExtensions);
-    setLoadingExtensions(false);
-  };
-
-  // Get domain pricing from API
-  const getDomainPricing = async (extension: string): Promise<DomainPricing | null> => {
     try {
-      const response = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/api/v1/domains/pricing/${extension}`,
-        {
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-          },
-          timeout: 10000,
-        }
+      const response = await makeRequest(cacheKey, () => 
+        axios.get(
+          `${import.meta.env.VITE_API_BASE_URL}/api/v1/domains/pricing/${extension}`,
+          {
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+            timeout: 10000,
+          }
+        )
       );
 
       if (response.data.success && response.data.data) {
-        return response.data.data as DomainPricing;
+        const pricing = response.data.data as DomainPricing;
+        // Cache for 10 minutes (pricing doesn't change often)
+        cache.set(cacheKey, pricing, 10 * 60 * 1000);
+        return pricing;
       }
       return null;
     } catch (error) {
       console.error(`Error fetching pricing for ${extension}:`, error);
       return null;
     }
-  };
+  }, [cache, makeRequest]);
 
-  // Check domain availability with pricing via DigitalKenya API
-  const checkDomainAvailabilityWithPricing = async (domain: string): Promise<{available: boolean, pricing?: DomainPricing}> => {
+  // Batch domain availability check
+  const checkBatchDomainAvailability = useCallback(async (domains: string[]): Promise<Map<string, {available: boolean, pricing?: DomainPricing}>> => {
+    const results = new Map<string, {available: boolean, pricing?: DomainPricing}>();
+    
+    // Check cache first for all domains
+    const uncachedDomains: string[] = [];
+    
+    domains.forEach(domain => {
+      const cacheKey = `availability:${domain}`;
+      const cached = cache.get(cacheKey);
+      if (cached) {
+        results.set(domain, cached);
+      } else {
+        uncachedDomains.push(domain);
+      }
+    });
+
+    if (uncachedDomains.length === 0) {
+      return results;
+    }
+
     try {
-      console.log(`[HeroSection] Checking availability with pricing for: ${domain}`);
-      
-      const response = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/api/v1/domains/availability/check`,
-        {
-          params: { 
-            domain: domain.trim().toLowerCase(),
-            include_pricing: true,
-            include_suggestions: false
-          },
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-          },
-          timeout: 15000,
-        }
+      // Try batch API call first (if supported)
+      const response = await makeRequest(`batch:${uncachedDomains.join(',')}`, () =>
+        axios.post(
+          `${import.meta.env.VITE_API_BASE_URL}/api/v1/domains/availability/batch`,
+          { domains: uncachedDomains },
+          {
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+            timeout: 20000,
+          }
+        )
       );
 
-      console.log(`[HeroSection] API Response for ${domain}:`, response.data);
+      if (response.data.success && response.data.data) {
+        Object.entries(response.data.data).forEach(([domain, data]: [string, any]) => {
+          const result = {
+            available: data.status === 'available' || data.available === true,
+            pricing: data.pricing || null
+          };
+          results.set(domain, result);
+          // Cache for 2 minutes (availability can change)
+          cache.set(`availability:${domain}`, result, 2 * 60 * 1000);
+        });
+      }
+    } catch (error) {
+      console.log('[Batch] Batch API not available, falling back to individual checks');
+      
+      // Fallback: parallel individual requests
+      const individualResults = await Promise.allSettled(
+        uncachedDomains.map(async (domain) => {
+          const result = await checkDomainAvailabilityWithPricing(domain);
+          return { domain, result };
+        })
+      );
+
+      individualResults.forEach((promiseResult) => {
+        if (promiseResult.status === 'fulfilled') {
+          const { domain, result } = promiseResult.value;
+          results.set(domain, result);
+        }
+      });
+    }
+
+    return results;
+  }, [cache, makeRequest]);
+
+  // Individual domain availability check (fallback)
+  const checkDomainAvailabilityWithPricing = useCallback(async (domain: string): Promise<{available: boolean, pricing?: DomainPricing}> => {
+    const cacheKey = `availability:${domain}`;
+    
+    // Check cache first
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      const response = await makeRequest(cacheKey, () =>
+        axios.get(
+          `${import.meta.env.VITE_API_BASE_URL}/api/v1/domains/availability/check`,
+          {
+            params: { 
+              domain: domain.trim().toLowerCase(),
+              include_pricing: true,
+              include_suggestions: false
+            },
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+            timeout: 15000,
+          }
+        )
+      );
 
       const responseData = response.data;
       
@@ -259,37 +421,106 @@ export const HeroSection = () => {
       }
 
       const { available, status, pricing } = responseData.data;
-      
       const isAvailable = status === 'available' || available === true;
       
-      console.log(`[HeroSection] Domain: ${domain}, Available: ${isAvailable}, Pricing:`, pricing);
-      
-      return {
+      const result = {
         available: isAvailable,
         pricing: pricing || null
       };
+
+      // Cache for 2 minutes
+      cache.set(cacheKey, result, 2 * 60 * 1000);
+      
+      return result;
       
     } catch (err: any) {
-      console.error(`[HeroSection] Error checking availability for ${domain}:`, err);
-      
-      if (err.code === 'ECONNABORTED') {
-        setError('Request timeout - please try again');
-      } else if (err.response?.status === 429) {
-        setError('Too many requests - please wait a moment and try again');
-      } else if (err.response?.status >= 500) {
-        setError('Server error - please try again later');
-      } else if (err.response?.data?.message) {
-        setError(err.response.data.message);
-      } else {
-        setError(`Failed to check availability for ${domain}. Please try again.`);
-      }
-      
+      console.error(`Error checking availability for ${domain}:`, err);
       return { available: false };
     }
-  };
+  }, [cache, makeRequest]);
 
-  // Generate domain suggestions with live pricing
-  const generateSuggestions = async (query: string): Promise<DomainSuggestion[]> => {
+  // Preload popular extensions
+  const preloadPopularExtensions = useCallback(async () => {
+    setLoadingExtensions(true);
+    
+    const popularExtensions = allKeExtensions.filter(ext => ext.popular);
+    
+    // Load pricing for popular extensions in parallel
+    const pricingPromises = popularExtensions.map(async (extension) => {
+      const pricing = await getDomainPricing(extension.ext);
+      const displayPrice = pricing && pricing.registration['1_year'] 
+        ? `KSh ${pricing.registration['1_year'].toLocaleString()}/year`
+        : 'Contact for pricing';
+      
+      return {
+        ...extension,
+        pricing,
+        priceDisplay: displayPrice
+      };
+    });
+
+    try {
+      const updatedExtensions = await Promise.all(pricingPromises);
+      setKeExtensions(prevExtensions => {
+        const newExtensions = [...prevExtensions];
+        updatedExtensions.forEach(updated => {
+          const index = newExtensions.findIndex(ext => ext.ext === updated.ext);
+          if (index >= 0) {
+            newExtensions[index] = updated;
+          } else {
+            newExtensions.push(updated);
+          }
+        });
+        return newExtensions;
+      });
+    } catch (error) {
+      console.error('Error preloading popular extensions:', error);
+    } finally {
+      setLoadingExtensions(false);
+    }
+    
+    // Load remaining extensions in background
+    setTimeout(() => loadRemainingExtensions(), 1000);
+  }, [allKeExtensions, getDomainPricing]);
+
+  // Load remaining extensions in background
+  const loadRemainingExtensions = useCallback(async () => {
+    const remainingExtensions = allKeExtensions.filter(ext => !ext.popular);
+    
+    const pricingPromises = remainingExtensions.map(async (extension) => {
+      const pricing = await getDomainPricing(extension.ext);
+      const displayPrice = pricing && pricing.registration['1_year'] 
+        ? `KSh ${pricing.registration['1_year'].toLocaleString()}/year`
+        : 'Contact for pricing';
+      
+      return {
+        ...extension,
+        pricing,
+        priceDisplay: displayPrice
+      };
+    });
+
+    try {
+      const updatedExtensions = await Promise.all(pricingPromises);
+      setKeExtensions(prevExtensions => {
+        const newExtensions = [...prevExtensions];
+        updatedExtensions.forEach(updated => {
+          const index = newExtensions.findIndex(ext => ext.ext === updated.ext);
+          if (index >= 0) {
+            newExtensions[index] = updated;
+          } else {
+            newExtensions.push(updated);
+          }
+        });
+        return newExtensions;
+      });
+    } catch (error) {
+      console.error('Error loading remaining extensions:', error);
+    }
+  }, [allKeExtensions, getDomainPricing]);
+
+  // Optimized suggestion generation with skeleton loading
+  const generateSuggestions = useCallback(async (query: string): Promise<DomainSuggestion[]> => {
     if (!query || query.length < 2) return [];
 
     const cleanQuery = query.toLowerCase()
@@ -299,72 +530,77 @@ export const HeroSection = () => {
 
     if (!cleanQuery || cleanQuery.length < 2) return [];
 
-    // Use the loaded extensions with pricing
-    const extensionsToCheck = keExtensions.length > 0 ? keExtensions : allKeExtensions.slice(0, 4);
+    // Get popular extensions first, then others
+    const popularExtensions = keExtensions.filter(ext => ext.popular);
+    const otherExtensions = keExtensions.filter(ext => !ext.popular);
+    const extensionsToCheck = [...popularExtensions, ...otherExtensions];
 
-    const suggestions: DomainSuggestion[] = [];
+    // Create skeleton suggestions immediately
+    const skeletonSuggestions: DomainSuggestion[] = extensionsToCheck.map((extension) => ({
+      domain: cleanQuery,
+      extension: {
+        ext: extension.ext,
+        desc: extension.desc,
+        popular: extension.popular,
+        price: extension.priceDisplay
+      },
+      available: null, // null means loading
+      pricing: extension.pricing,
+      price: extension.pricing?.registration['1_year'] || 0,
+      isLoading: true,
+    }));
+
+    // Return skeleton first for immediate UI response
+    setSuggestions(skeletonSuggestions);
+    setShowSuggestions(true);
+
+    // Generate full domain names for batch check
+    const domainsToCheck = extensionsToCheck.map(ext => `${cleanQuery}${ext.ext}`);
     
-    const availabilityPromises = extensionsToCheck.map(async (extension) => {
-      const fullDomain = `${cleanQuery}${extension.ext}`;
-      const result = await checkDomainAvailabilityWithPricing(fullDomain);
-      
-      const displayPrice = extension.pricing && extension.pricing.registration['1_year'] 
-        ? extension.pricing.registration['1_year']
-        : parseInt(extension.priceDisplay.replace(/[^0-9]/g, '')) || 0;
-      
-      return {
-        domain: cleanQuery,
-        extension: {
-          ext: extension.ext,
-          desc: extension.desc,
-          popular: extension.popular,
-          price: extension.priceDisplay
-        },
-        available: result.available,
-        pricing: result.pricing || extension.pricing,
-        price: displayPrice,
-      };
-    });
-
     try {
-      const results = await Promise.all(availabilityPromises);
-      suggestions.push(...results);
-      
-      console.log(`[HeroSection] Generated ${suggestions.length} suggestions with pricing for "${cleanQuery}"`);
-      
-      suggestions.sort((a, b) => {
+      // Check availability in batch
+      const availabilityResults = await checkBatchDomainAvailability(domainsToCheck);
+
+      // Update suggestions with real data
+      const finalSuggestions = skeletonSuggestions.map((suggestion, index) => {
+        const fullDomain = `${cleanQuery}${suggestion.extension.ext}`;
+        const availabilityData = availabilityResults.get(fullDomain);
+        
+        return {
+          ...suggestion,
+          available: availabilityData?.available ?? false,
+          pricing: availabilityData?.pricing || suggestion.pricing,
+          isLoading: false,
+        };
+      });
+
+      // Sort: available first, then popular, then by price
+      finalSuggestions.sort((a, b) => {
         if (a.available && !b.available) return -1;
         if (!a.available && b.available) return 1;
         if (a.extension.popular && !b.extension.popular) return -1;
         if (!a.extension.popular && b.extension.popular) return 1;
-        return 0;
+        return a.price - b.price;
       });
+
+      return finalSuggestions;
       
     } catch (error) {
-      console.error('[HeroSection] Error generating suggestions:', error);
-      setError('Failed to check domain availability. Please try again.');
+      console.error('Error generating suggestions:', error);
+      // Return skeleton with error state
+      return skeletonSuggestions.map(s => ({ ...s, available: false, isLoading: false }));
     }
+  }, [keExtensions, checkBatchDomainAvailability]);
 
-    return suggestions;
-  };
-
-  // Enhanced search handler
-  const handleSearch = async () => {
-    const trimmedQuery = searchQuery.trim();
-    if (!trimmedQuery || trimmedQuery.length < 2) {
-      setError('Please enter at least 2 characters for domain search');
-      return;
-    }
-
-    console.log(`[HeroSection] Starting search for: "${trimmedQuery}"`);
+  // Debounced search handler
+  const handleDebouncedSearch = useCallback(async (query: string) => {
+    console.log(`[Search] Auto-searching for: "${query}"`);
     
     setIsSearching(true);
-    setShowSuggestions(false);
     setError(null);
-    setSuggestions([]);
 
     try {
-      const newSuggestions = await generateSuggestions(trimmedQuery);
+      const newSuggestions = await generateSuggestions(query);
       
       if (newSuggestions.length === 0) {
         setError('No domain suggestions could be generated. Please try a different search term.');
@@ -374,39 +610,55 @@ export const HeroSection = () => {
         setShowSuggestions(true);
         
         const availableCount = newSuggestions.filter(s => s.available).length;
-        console.log(`[HeroSection] Search completed: ${availableCount}/${newSuggestions.length} domains available`);
+        console.log(`[Search] Auto-search completed: ${availableCount}/${newSuggestions.length} domains available`);
       }
       
     } catch (err: any) {
-      console.error('[HeroSection] Search failed:', err);
+      console.error('[Search] Auto-search failed:', err);
       setError(err.message || 'Failed to search domains. Please check your connection and try again.');
       setShowSuggestions(false);
     } finally {
       setIsSearching(false);
     }
-  };
+  }, [generateSuggestions]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Manual search handler (for button click)
+  const handleManualSearch = useCallback(async () => {
+    const trimmedQuery = searchQuery.trim();
+    if (!trimmedQuery || trimmedQuery.length < 2) {
+      setError('Please enter at least 2 characters for domain search');
+      return;
+    }
+
+    // If we already have results for this query, don't search again
+    if (showSuggestions && suggestions.length > 0 && !isSearching) {
+      return;
+    }
+
+    await handleDebouncedSearch(trimmedQuery);
+  }, [searchQuery, showSuggestions, suggestions, isSearching, handleDebouncedSearch]);
+
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setSearchQuery(value);
     setError(null);
     
-    if (value.trim().length <= 2) {
+    if (value.trim().length <= 1) {
       setShowSuggestions(false);
       setSuggestions([]);
     }
-  };
+  }, []);
 
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyPress = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      handleSearch();
+      handleManualSearch();
     }
-  };
+  }, [handleManualSearch]);
 
-  const handleDomainSelect = (suggestion: DomainSuggestion) => {
-    if (!suggestion.available) {
-      console.log(`[HeroSection] Cannot select unavailable domain: ${suggestion.domain}${suggestion.extension.ext}`);
+  const handleDomainSelect = useCallback((suggestion: DomainSuggestion) => {
+    if (!suggestion.available || suggestion.isLoading) {
+      console.log(`[HeroSection] Cannot select unavailable/loading domain: ${suggestion.domain}${suggestion.extension.ext}`);
       return;
     }
 
@@ -426,20 +678,39 @@ export const HeroSection = () => {
       console.error('[HeroSection] Navigation error:', error);
       setError('Failed to proceed to registrar selection. Please try again.');
     }
-  };
+  }, [navigate]);
 
-  const handleExtensionSelect = (extension: KEExtension) => {
+  const handleExtensionSelect = useCallback((extension: KEExtension) => {
     console.log(`[HeroSection] Extension selected: ${extension.ext}`);
-    // You can add navigation logic here or just show more details
     setShowAllExtensions(false);
-  };
+    // You can add navigation logic here or populate search with extension
+  }, []);
 
-  const formatPrice = (pricing: DomainPricing | null): string => {
+  const formatPrice = useCallback((pricing: DomainPricing | null): string => {
     if (!pricing || !pricing.registration['1_year']) {
       return 'Contact for pricing';
     }
     return `KSh ${pricing.registration['1_year'].toLocaleString()}/year`;
-  };
+  }, []);
+
+  // Skeleton loading component
+  const SkeletonCard = () => (
+    <div className="group p-3 sm:p-4 bg-white rounded-xl sm:rounded-2xl border border-gray-200 animate-pulse">
+      <div className="flex items-center justify-between">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center space-x-2 mb-1">
+            <div className="h-4 bg-gray-200 rounded w-32"></div>
+            <div className="w-3 h-3 bg-gray-200 rounded-full"></div>
+          </div>
+          <div className="h-3 bg-gray-200 rounded w-48 mb-1"></div>
+          <div className="h-3 bg-gray-200 rounded w-24"></div>
+        </div>
+        <div className="flex items-center space-x-2 ml-2">
+          <Loader2 className="w-4 h-4 animate-spin text-primary" />
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-brand-canvas via-white to-white overflow-hidden">
@@ -583,19 +854,27 @@ export const HeroSection = () => {
                         value={searchQuery}
                         onChange={handleInputChange}
                         onKeyPress={handleKeyPress}
+                        onFocus={() => setIsInputFocused(true)}
+                        onBlur={() => setIsInputFocused(false)}
                         placeholder="What's your big idea? Search for your .ke domain..."
                         className="w-full pl-12 pr-4 py-3 sm:py-4 text-base sm:text-lg font-medium bg-input rounded-xl sm:rounded-2xl border border-input-border focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all duration-200 placeholder-muted-foreground"
                       />
+                      {/* Loading indicator in input */}
+                      {isSearching && (
+                        <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
+                          <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                        </div>
+                      )}
                     </div>
 
                     <button
-                      onClick={handleSearch}
+                      onClick={handleManualSearch}
                       disabled={isSearching || !searchQuery.trim()}
                       className="w-full sm:w-auto bg-primary hover:bg-primary/90 text-primary-foreground px-6 sm:px-8 py-3 sm:py-4 rounded-xl sm:rounded-2xl font-semibold text-base sm:text-lg transition-all duration-200 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-primary/25 transform hover:scale-[1.02] active:scale-[0.98]"
                     >
                       {isSearching ? (
                         <>
-                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          <Loader2 className="w-5 h-5 animate-spin" />
                           <span>Searching...</span>
                         </>
                       ) : (
@@ -614,13 +893,18 @@ export const HeroSection = () => {
                   </div>
                 )}
 
-                {/* Suggestions Panel with Live Pricing */}
-                {showSuggestions && suggestions.length > 0 && (
+                {/* Suggestions Panel with Live Pricing and Optimistic UI */}
+                {showSuggestions && (
                   <div className="border-t border-gray-100 bg-gray-50/30 p-4 sm:p-6">
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center space-x-2">
-                        <span className="text-sm sm:text-base font-semibold text-foreground">Domain Availability with Live Pricing</span>
+                        <span className="text-sm sm:text-base font-semibold text-foreground">
+                          Domain Availability with Live Pricing
+                        </span>
                         <div className="h-1.5 w-1.5 bg-green-500 rounded-full animate-pulse"></div>
+                        {isSearching && (
+                          <span className="text-xs text-muted-foreground">(updating...)</span>
+                        )}
                       </div>
                       <button
                         onClick={() => setShowAllExtensions(true)}
@@ -633,57 +917,81 @@ export const HeroSection = () => {
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
                       {suggestions.map((suggestion, index) => (
-                        <div
-                          key={index}
-                          className={`group p-3 sm:p-4 bg-white rounded-xl sm:rounded-2xl border border-gray-200 hover:border-primary/30 hover:shadow-md transition-all duration-200 ${
-                            suggestion.available ? 'cursor-pointer' : 'opacity-75'
-                          }`}
-                          onClick={() => suggestion.available && handleDomainSelect(suggestion)}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center space-x-2 mb-1">
-                                <span className="font-bold text-foreground text-sm sm:text-base truncate">
-                                  {suggestion.domain}{suggestion.extension.ext}
-                                </span>
-                                {suggestion.extension.popular && (
-                                  <Star className="w-3 h-3 text-primary fill-current" />
-                                )}
-                              </div>
-                              <p className="text-xs sm:text-sm text-muted-foreground mb-1">
-                                {suggestion.extension.desc}
-                              </p>
-                              <div className="flex items-center space-x-2">
-                                <p className="text-xs sm:text-sm font-semibold text-primary">
-                                  {formatPrice(suggestion.pricing)}
-                                </p>
-                                {suggestion.pricing?.source && (
-                                  <span className="text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
-                                    {suggestion.pricing.source === 'whmcs' ? 'Live' : 'Est.'}
+                        suggestion.isLoading ? (
+                          <SkeletonCard key={`skeleton-${index}`} />
+                        ) : (
+                          <div
+                            key={`${suggestion.domain}-${suggestion.extension.ext}`}
+                            className={`group p-3 sm:p-4 bg-white rounded-xl sm:rounded-2xl border transition-all duration-200 ${
+                              suggestion.available 
+                                ? 'border-gray-200 hover:border-primary/30 hover:shadow-md cursor-pointer' 
+                                : 'border-gray-200 opacity-75'
+                            }`}
+                            onClick={() => suggestion.available && handleDomainSelect(suggestion)}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center space-x-2 mb-1">
+                                  <span className="font-bold text-foreground text-sm sm:text-base truncate">
+                                    {suggestion.domain}{suggestion.extension.ext}
                                   </span>
+                                  {suggestion.extension.popular && (
+                                    <Star className="w-3 h-3 text-primary fill-current" />
+                                  )}
+                                  {index < 2 && (
+                                    <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
+                                      Top Pick
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs sm:text-sm text-muted-foreground mb-1">
+                                  {suggestion.extension.desc}
+                                </p>
+                                <div className="flex items-center space-x-2">
+                                  <p className="text-xs sm:text-sm font-semibold text-primary">
+                                    {formatPrice(suggestion.pricing)}
+                                  </p>
+                                  {suggestion.pricing?.source && (
+                                    <span className="text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
+                                      {suggestion.pricing.source === 'whmcs' ? 'Live' : 'Est.'}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center space-x-2 ml-2">
+                                {suggestion.available === null ? (
+                                  <div className="flex items-center space-x-1">
+                                    <Loader2 className="w-3 h-3 animate-spin text-primary" />
+                                    <span className="text-xs sm:text-sm text-gray-500 font-medium">Checking...</span>
+                                  </div>
+                                ) : suggestion.available ? (
+                                  <div className="flex items-center space-x-1 text-green-600">
+                                    <Check className="w-4 h-4" />
+                                    <span className="text-xs sm:text-sm font-medium">Available</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs sm:text-sm text-red-500 font-medium">Taken</span>
+                                )}
+                                {suggestion.available && (
+                                  <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
                                 )}
                               </div>
-                            </div>
-
-                            <div className="flex items-center space-x-2 ml-2">
-                              {suggestion.available === null ? (
-                                <span className="text-xs sm:text-sm text-gray-500 font-medium">Checking...</span>
-                              ) : suggestion.available ? (
-                                <div className="flex items-center space-x-1 text-green-600">
-                                  <Check className="w-4 h-4" />
-                                  <span className="text-xs sm:text-sm font-medium">Available</span>
-                                </div>
-                              ) : (
-                                <span className="text-xs sm:text-sm text-red-500 font-medium">Taken</span>
-                              )}
-                              {suggestion.available && (
-                                <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                              )}
                             </div>
                           </div>
-                        </div>
+                        )
                       ))}
                     </div>
+
+                    {/* Quick suggestions hint */}
+                    {suggestions.some(s => s.available) && (
+                      <div className="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
+                        <p className="text-sm text-green-800">
+                          💡 <strong>Pro tip:</strong> Popular extensions (.co.ke, .me.ke) are shown first. 
+                          Click any available domain to proceed with registration!
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -703,8 +1011,8 @@ export const HeroSection = () => {
               </div>
             </div>
 
-            {/* Stats Section */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8 lg:gap-12 max-w-5xl mx-auto px-4">
+            {/* Enhanced Stats Section */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8 lg:gap-12 max-w-5xl mx-auto px-4 mt-12">
               <div className="text-center">
                 <div className="text-2xl sm:text-3xl lg:text-4xl font-bold text-primary mb-1 sm:mb-2">
                   250K+
@@ -723,10 +1031,10 @@ export const HeroSection = () => {
               </div>
               <div className="text-center">
                 <div className="text-2xl sm:text-3xl lg:text-4xl font-bold text-primary mb-1 sm:mb-2">
-                  24/7
+                  &lt;300ms
                 </div>
                 <div className="text-xs sm:text-sm lg:text-base text-muted-foreground leading-tight">
-                  Local<br className="sm:hidden" /> Support
+                  Search<br className="sm:hidden" /> Response
                 </div>
               </div>
               <div className="text-center">
@@ -742,7 +1050,7 @@ export const HeroSection = () => {
         </div>
       </div>
 
-      {/* All .ke Extensions Modal */}
+      {/* Enhanced All .ke Extensions Modal */}
       {showAllExtensions && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
@@ -753,14 +1061,17 @@ export const HeroSection = () => {
                   <h3 className="text-2xl font-bold text-foreground flex items-center space-x-2">
                     <Globe className="w-6 h-6 text-primary" />
                     <span>All .ke Extensions</span>
+                    {loadingExtensions && (
+                      <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                    )}
                   </h3>
                   <p className="text-muted-foreground mt-1">
-                    Choose the perfect Kenyan domain extension for your needs
+                    Choose the perfect Kenyan domain extension for your needs • Live pricing included
                   </p>
                 </div>
                 <button
                   onClick={() => setShowAllExtensions(false)}
-                  className="text-muted-foreground hover:text-foreground transition-colors p-2"
+                  className="text-muted-foreground hover:text-foreground transition-colors p-2 rounded-lg hover:bg-gray-100"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -771,82 +1082,50 @@ export const HeroSection = () => {
 
             {/* Modal Content */}
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
-              {loadingExtensions ? (
+              {loadingExtensions && keExtensions.length === 0 ? (
                 <div className="flex items-center justify-center py-12">
                   <div className="text-center">
-                    <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-4"></div>
+                    <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
                     <p className="text-muted-foreground">Loading current pricing...</p>
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {keExtensions.map((extension, index) => (
-                    <div
-                      key={index}
-                      className="group p-4 bg-gray-50 hover:bg-white rounded-xl border border-gray-200 hover:border-primary/30 hover:shadow-lg transition-all duration-200 cursor-pointer"
-                      onClick={() => handleExtensionSelect(extension)}
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-lg font-bold text-primary">
-                            {extension.ext}
-                          </span>
-                          {extension.popular && (
-                            <div className="flex items-center space-x-1">
-                              <Star className="w-4 h-4 text-amber-500 fill-current" />
-                              <span className="text-xs text-amber-600 font-medium">Popular</span>
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm font-semibold text-foreground">
-                            {extension.priceDisplay}
-                          </div>
-                          {extension.pricing?.source && (
-                            <div className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded mt-1">
-                              {extension.pricing.source === 'whmcs' ? 'Live Price' : 'Estimate'}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
-                        {extension.desc}
-                      </p>
-
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">Category:</span>
-                          <span className="font-medium text-foreground bg-gray-100 px-2 py-1 rounded">
-                            {extension.category}
-                          </span>
-                        </div>
-                        <div className="flex items-start justify-between text-xs">
-                          <span className="text-muted-foreground">Eligibility:</span>
-                          <span className="text-right font-medium text-foreground max-w-[60%]">
-                            {extension.eligibility}
-                          </span>
-                        </div>
-                        {extension.pricing && extension.pricing.registration['2_years'] && (
-                          <div className="flex items-center justify-between text-xs pt-1 border-t border-gray-200">
-                            <span className="text-muted-foreground">2 years:</span>
-                            <span className="font-medium text-primary">
-                              KSh {extension.pricing.registration['2_years'].toLocaleString()}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between">
-                        <div className="flex items-center space-x-1 text-xs text-muted-foreground">
-                          <Info className="w-3 h-3" />
-                          <span>Click to learn more</span>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                      </div>
+                <>
+                  {/* Popular Extensions First */}
+                  <div className="mb-8">
+                    <h4 className="text-lg font-semibold text-foreground mb-4 flex items-center space-x-2">
+                      <Star className="w-5 h-5 text-amber-500 fill-current" />
+                      <span>Popular Extensions</span>
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {keExtensions.filter(ext => ext.popular).map((extension, index) => (
+                        <ExtensionCard 
+                          key={extension.ext} 
+                          extension={extension} 
+                          onSelect={handleExtensionSelect}
+                          isPopular={true}
+                        />
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+
+                  {/* Other Extensions */}
+                  <div>
+                    <h4 className="text-lg font-semibold text-foreground mb-4">
+                      Specialized Extensions
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {keExtensions.filter(ext => !ext.popular).map((extension, index) => (
+                        <ExtensionCard 
+                          key={extension.ext} 
+                          extension={extension} 
+                          onSelect={handleExtensionSelect}
+                          isPopular={false}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </>
               )}
 
               {/* Extension Categories Info */}
@@ -857,9 +1136,9 @@ export const HeroSection = () => {
                 </h4>
                 <div className="text-sm text-blue-800 space-y-1">
                   <p>• <strong>.co.ke</strong> - Most popular for businesses and commercial use</p>
+                  <p>• <strong>.me.ke</strong> - Great for personal branding and portfolios</p>
                   <p>• <strong>.or.ke</strong> - Perfect for organizations and NGOs</p>
                   <p>• <strong>.ac.ke</strong> - Reserved for academic institutions</p>
-                  <p>• <strong>.me.ke</strong> - Great for personal branding and portfolios</p>
                   <p>• <strong>All domains</strong> are managed by KENIC with full local support</p>
                 </div>
               </div>
@@ -868,13 +1147,14 @@ export const HeroSection = () => {
             {/* Modal Footer */}
             <div className="p-6 border-t border-gray-200 bg-gray-50">
               <div className="flex items-center justify-between">
-                <div className="text-sm text-muted-foreground">
-                  Prices updated in real-time from our registrar partners
+                <div className="text-sm text-muted-foreground flex items-center space-x-2">
+                  <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span>Prices updated in real-time from our registrar partners</span>
                 </div>
                 <div className="flex items-center space-x-3">
                   <button
                     onClick={() => setShowAllExtensions(false)}
-                    className="px-4 py-2 text-muted-foreground hover:text-foreground transition-colors"
+                    className="px-4 py-2 text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-gray-100"
                   >
                     Close
                   </button>
@@ -885,9 +1165,10 @@ export const HeroSection = () => {
                       const searchInput = document.querySelector('input[type="text"]') as HTMLInputElement;
                       if (searchInput) searchInput.focus();
                     }}
-                    className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium"
+                    className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium flex items-center space-x-2"
                   >
-                    Start Search
+                    <Search className="w-4 h-4" />
+                    <span>Start Search</span>
                   </button>
                 </div>
               </div>
@@ -898,3 +1179,84 @@ export const HeroSection = () => {
     </div>
   );
 };
+
+// Extension Card Component
+const ExtensionCard: React.FC<{
+  extension: KEExtension;
+  onSelect: (extension: KEExtension) => void;
+  isPopular: boolean;
+}> = ({ extension, onSelect, isPopular }) => (
+  <div
+    className={`group p-4 rounded-xl border transition-all duration-200 cursor-pointer ${
+      isPopular 
+        ? 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 hover:border-blue-300 hover:shadow-lg' 
+        : 'bg-gray-50 hover:bg-white border-gray-200 hover:border-primary/30 hover:shadow-lg'
+    }`}
+    onClick={() => onSelect(extension)}
+  >
+    <div className="flex items-start justify-between mb-3">
+      <div className="flex items-center space-x-2">
+        <span className={`text-lg font-bold ${isPopular ? 'text-blue-700' : 'text-primary'}`}>
+          {extension.ext}
+        </span>
+        {extension.popular && (
+          <div className="flex items-center space-x-1">
+            <Star className="w-4 h-4 text-amber-500 fill-current" />
+            <span className="text-xs text-amber-600 font-medium">Popular</span>
+          </div>
+        )}
+      </div>
+      <div className="text-right">
+        <div className="text-sm font-semibold text-foreground">
+          {extension.priceDisplay}
+        </div>
+        {extension.pricing?.source && (
+          <div className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded mt-1">
+            {extension.pricing.source === 'whmcs' ? 'Live Price' : 'Estimate'}
+          </div>
+        )}
+      </div>
+    </div>
+
+    <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
+      {extension.desc}
+    </p>
+
+    <div className="space-y-2">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground">Category:</span>
+        <span className={`font-medium px-2 py-1 rounded ${
+          isPopular ? 'text-blue-700 bg-blue-100' : 'text-foreground bg-gray-100'
+        }`}>
+          {extension.category}
+        </span>
+      </div>
+      <div className="flex items-start justify-between text-xs">
+        <span className="text-muted-foreground">Eligibility:</span>
+        <span className="text-right font-medium text-foreground max-w-[60%]">
+          {extension.eligibility}
+        </span>
+      </div>
+      {extension.pricing && extension.pricing.registration['2_years'] && (
+        <div className="flex items-center justify-between text-xs pt-1 border-t border-gray-200">
+          <span className="text-muted-foreground">2 years:</span>
+          <span className={`font-medium ${isPopular ? 'text-blue-700' : 'text-primary'}`}>
+            KSh {extension.pricing.registration['2_years'].toLocaleString()}
+          </span>
+        </div>
+      )}
+    </div>
+
+    <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between">
+      <div className="flex items-center space-x-1 text-xs text-muted-foreground">
+        <Info className="w-3 h-3" />
+        <span>Click to learn more</span>
+      </div>
+      <ArrowRight className={`w-4 h-4 transition-colors ${
+        isPopular 
+          ? 'text-blue-500 group-hover:text-blue-700' 
+          : 'text-muted-foreground group-hover:text-primary'
+      }`} />
+    </div>
+  </div>
+);
