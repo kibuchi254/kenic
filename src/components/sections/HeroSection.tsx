@@ -27,10 +27,10 @@ interface DomainPricing {
 
 interface DomainSuggestion {
   domain: string;
-  extension: { 
-    ext: string; 
-    desc: string; 
-    popular: boolean; 
+  extension: {
+    ext: string;
+    desc: string;
+    popular: boolean;
     price: string;
   };
   available: boolean | null;
@@ -90,12 +90,12 @@ class DomainCache {
   get(key: string): any | null {
     const entry = this.cache.get(key);
     if (!entry) return null;
-    
+
     if (Date.now() > entry.expiry) {
       this.cache.delete(key);
       return null;
     }
-    
+
     return entry.data;
   }
 
@@ -138,70 +138,70 @@ export const HeroSection = () => {
   const [error, setError] = useState<string | null>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const navigate = useNavigate();
-  
+
   // Debounced search query
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
-  
+
   // Cache instance
   const cache = DomainCache.getInstance();
-  
+
   // Request deduplication
   const activeRequests = useRef(new Map<string, Promise<any>>());
 
   // All available .ke extensions with their details
   const allKeExtensions: KEExtension[] = useMemo(() => [
-    { 
-      ext: '.co.ke', 
-      desc: 'For commercial enterprises and businesses', 
-      popular: true, 
+    {
+      ext: '.co.ke',
+      desc: 'For commercial enterprises and businesses',
+      popular: true,
       category: 'Commercial',
       eligibility: 'Any individual or organization',
       priceDisplay: 'Loading...'
     },
-    { 
-      ext: '.me.ke', 
-      desc: 'For personal websites and individuals', 
-      popular: true, 
+    {
+      ext: '.me.ke',
+      desc: 'For personal websites and individuals',
+      popular: true,
       category: 'Personal',
       eligibility: 'Any individual',
       priceDisplay: 'Loading...'
     },
-    { 
-      ext: '.or.ke', 
-      desc: 'For organizations and NGOs', 
-      popular: false, 
+    {
+      ext: '.or.ke',
+      desc: 'For organizations and NGOs',
+      popular: false,
       category: 'Organization',
       eligibility: 'Non-profit organizations',
       priceDisplay: 'Loading...'
     },
-    { 
-      ext: '.ac.ke', 
-      desc: 'For academic institutions', 
-      popular: false, 
+    {
+      ext: '.ac.ke',
+      desc: 'For academic institutions',
+      popular: false,
       category: 'Academic',
       eligibility: 'Educational institutions only',
       priceDisplay: 'Loading...'
     },
-    { 
-      ext: '.go.ke', 
-      desc: 'For government entities', 
-      popular: false, 
+    {
+      ext: '.go.ke',
+      desc: 'For government entities',
+      popular: false,
       category: 'Government',
       eligibility: 'Government organizations only',
       priceDisplay: 'Loading...'
     },
-    { 
-      ext: '.ne.ke', 
-      desc: 'For network providers and ISPs', 
-      popular: false, 
+    {
+      ext: '.ne.ke',
+      desc: 'For network providers and ISPs',
+      popular: false,
       category: 'Network',
       eligibility: 'Network service providers',
       priceDisplay: 'Loading...'
     },
-    { 
-      ext: '.sc.ke', 
-      desc: 'For schools and educational institutions', 
-      popular: false, 
+    {
+      ext: '.sc.ke',
+      desc: 'For schools and educational institutions',
+      popular: false,
       category: 'Education',
       eligibility: 'Schools and colleges',
       priceDisplay: 'Loading...'
@@ -220,6 +220,7 @@ export const HeroSection = () => {
       opacity: Math.random() * 0.3 + 0.1,
     }));
     setAnimatedNodes(nodes);
+
     const animateNodes = () => {
       setAnimatedNodes((prev) =>
         prev.map((node) => ({
@@ -229,6 +230,7 @@ export const HeroSection = () => {
         }))
       );
     };
+
     const interval = setInterval(animateNodes, 150);
     return () => clearInterval(interval);
   }, []);
@@ -241,6 +243,7 @@ export const HeroSection = () => {
         y: (e.clientY / window.innerHeight) * 100,
       });
     };
+
     window.addEventListener('mousemove', handleMouseMove);
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
@@ -262,7 +265,7 @@ export const HeroSection = () => {
   }, [debouncedSearchQuery]);
 
   // Deduplicated API request helper
-  const makeRequest = useCallback(async <T>(key: string, requestFn: () => Promise<T>): Promise<T> => {
+  const makeRequest = useCallback(<T,>(key: string, requestFn: () => Promise<T>): Promise<T> => {
     // Check if we already have an active request for this key
     if (activeRequests.current.has(key)) {
       return activeRequests.current.get(key) as Promise<T>;
@@ -280,7 +283,7 @@ export const HeroSection = () => {
   // Enhanced caching for domain pricing
   const getDomainPricing = useCallback(async (extension: string): Promise<DomainPricing | null> => {
     const cacheKey = `pricing:${extension}`;
-    
+
     // Check cache first
     const cached = cache.get(cacheKey);
     if (cached) {
@@ -289,7 +292,7 @@ export const HeroSection = () => {
     }
 
     try {
-      const response = await makeRequest(cacheKey, () => 
+      const response = await makeRequest(cacheKey, () =>
         axios.get(
           `${import.meta.env.VITE_API_BASE_URL}/api/v1/domains/pricing/${extension}`,
           {
@@ -308,6 +311,7 @@ export const HeroSection = () => {
         cache.set(cacheKey, pricing, 10 * 60 * 1000);
         return pricing;
       }
+
       return null;
     } catch (error) {
       console.error(`Error fetching pricing for ${extension}:`, error);
@@ -318,10 +322,10 @@ export const HeroSection = () => {
   // Batch domain availability check
   const checkBatchDomainAvailability = useCallback(async (domains: string[]): Promise<Map<string, {available: boolean, pricing?: DomainPricing}>> => {
     const results = new Map<string, {available: boolean, pricing?: DomainPricing}>();
-    
+
     // Check cache first for all domains
     const uncachedDomains: string[] = [];
-    
+
     domains.forEach(domain => {
       const cacheKey = `availability:${domain}`;
       const cached = cache.get(cacheKey);
@@ -365,7 +369,7 @@ export const HeroSection = () => {
       }
     } catch (error) {
       console.log('[Batch] Batch API not available, falling back to individual checks');
-      
+
       // Fallback: parallel individual requests
       const individualResults = await Promise.allSettled(
         uncachedDomains.map(async (domain) => {
@@ -388,7 +392,7 @@ export const HeroSection = () => {
   // Individual domain availability check (fallback)
   const checkDomainAvailabilityWithPricing = useCallback(async (domain: string): Promise<{available: boolean, pricing?: DomainPricing}> => {
     const cacheKey = `availability:${domain}`;
-    
+
     // Check cache first
     const cached = cache.get(cacheKey);
     if (cached) {
@@ -400,7 +404,7 @@ export const HeroSection = () => {
         axios.get(
           `${import.meta.env.VITE_API_BASE_URL}/api/v1/domains/availability/check`,
           {
-            params: { 
+            params: {
               domain: domain.trim().toLowerCase(),
               include_pricing: true,
               include_suggestions: false
@@ -415,14 +419,14 @@ export const HeroSection = () => {
       );
 
       const responseData = response.data;
-      
+
       if (responseData.success !== true) {
         throw new Error(responseData.message || 'Domain availability check failed');
       }
 
       const { available, status, pricing } = responseData.data;
       const isAvailable = status === 'available' || available === true;
-      
+
       const result = {
         available: isAvailable,
         pricing: pricing || null
@@ -430,9 +434,8 @@ export const HeroSection = () => {
 
       // Cache for 2 minutes
       cache.set(cacheKey, result, 2 * 60 * 1000);
-      
+
       return result;
-      
     } catch (err: any) {
       console.error(`Error checking availability for ${domain}:`, err);
       return { available: false };
@@ -442,16 +445,16 @@ export const HeroSection = () => {
   // Preload popular extensions
   const preloadPopularExtensions = useCallback(async () => {
     setLoadingExtensions(true);
-    
+
     const popularExtensions = allKeExtensions.filter(ext => ext.popular);
-    
+
     // Load pricing for popular extensions in parallel
     const pricingPromises = popularExtensions.map(async (extension) => {
       const pricing = await getDomainPricing(extension.ext);
-      const displayPrice = pricing && pricing.registration['1_year'] 
+      const displayPrice = pricing && pricing.registration['1_year']
         ? `KSh ${pricing.registration['1_year'].toLocaleString()}/year`
         : 'Contact for pricing';
-      
+
       return {
         ...extension,
         pricing,
@@ -478,7 +481,7 @@ export const HeroSection = () => {
     } finally {
       setLoadingExtensions(false);
     }
-    
+
     // Load remaining extensions in background
     setTimeout(() => loadRemainingExtensions(), 1000);
   }, [allKeExtensions, getDomainPricing]);
@@ -486,13 +489,13 @@ export const HeroSection = () => {
   // Load remaining extensions in background
   const loadRemainingExtensions = useCallback(async () => {
     const remainingExtensions = allKeExtensions.filter(ext => !ext.popular);
-    
+
     const pricingPromises = remainingExtensions.map(async (extension) => {
       const pricing = await getDomainPricing(extension.ext);
-      const displayPrice = pricing && pricing.registration['1_year'] 
+      const displayPrice = pricing && pricing.registration['1_year']
         ? `KSh ${pricing.registration['1_year'].toLocaleString()}/year`
         : 'Contact for pricing';
-      
+
       return {
         ...extension,
         pricing,
@@ -556,7 +559,7 @@ export const HeroSection = () => {
 
     // Generate full domain names for batch check
     const domainsToCheck = extensionsToCheck.map(ext => `${cleanQuery}${ext.ext}`);
-    
+
     try {
       // Check availability in batch
       const availabilityResults = await checkBatchDomainAvailability(domainsToCheck);
@@ -565,7 +568,7 @@ export const HeroSection = () => {
       const finalSuggestions = skeletonSuggestions.map((suggestion, index) => {
         const fullDomain = `${cleanQuery}${suggestion.extension.ext}`;
         const availabilityData = availabilityResults.get(fullDomain);
-        
+
         return {
           ...suggestion,
           available: availabilityData?.available ?? false,
@@ -584,7 +587,6 @@ export const HeroSection = () => {
       });
 
       return finalSuggestions;
-      
     } catch (error) {
       console.error('Error generating suggestions:', error);
       // Return skeleton with error state
@@ -595,24 +597,23 @@ export const HeroSection = () => {
   // Debounced search handler
   const handleDebouncedSearch = useCallback(async (query: string) => {
     console.log(`[Search] Auto-searching for: "${query}"`);
-    
+
     setIsSearching(true);
     setError(null);
 
     try {
       const newSuggestions = await generateSuggestions(query);
-      
+
       if (newSuggestions.length === 0) {
         setError('No domain suggestions could be generated. Please try a different search term.');
         setShowSuggestions(false);
       } else {
         setSuggestions(newSuggestions);
         setShowSuggestions(true);
-        
+
         const availableCount = newSuggestions.filter(s => s.available).length;
         console.log(`[Search] Auto-search completed: ${availableCount}/${newSuggestions.length} domains available`);
       }
-      
     } catch (err: any) {
       console.error('[Search] Auto-search failed:', err);
       setError(err.message || 'Failed to search domains. Please check your connection and try again.');
@@ -642,7 +643,7 @@ export const HeroSection = () => {
     const value = e.target.value;
     setSearchQuery(value);
     setError(null);
-    
+
     if (value.trim().length <= 1) {
       setShowSuggestions(false);
       setSuggestions([]);
@@ -683,13 +684,13 @@ export const HeroSection = () => {
   const handleExtensionSelect = useCallback((extension: KEExtension) => {
     console.log(`[HeroSection] Extension selected: ${extension.ext}`);
     setShowAllExtensions(false);
-    // You can add navigation logic here or populate search with extension
   }, []);
 
   const formatPrice = useCallback((pricing: DomainPricing | null): string => {
     if (!pricing || !pricing.registration['1_year']) {
       return 'Contact for pricing';
     }
+
     return `KSh ${pricing.registration['1_year'].toLocaleString()}/year`;
   }, []);
 
@@ -724,7 +725,7 @@ export const HeroSection = () => {
             background: `radial-gradient(circle at ${mousePosition.x}% ${mousePosition.y}%, hsl(var(--brand-primary) / 0.1), transparent 50%)`,
           }}
         />
-        
+
         <svg className="absolute inset-0 w-full h-full opacity-20" style={{ zIndex: 1 }}>
           <defs>
             <filter id="subtleGlow">
@@ -739,7 +740,6 @@ export const HeroSection = () => {
               <stop offset="100%" stopColor="hsl(var(--brand-primary) / 0.1)" />
             </linearGradient>
           </defs>
-
           {animatedNodes.map((node, i) =>
             animatedNodes.slice(i + 1).map((otherNode, j) => {
               const distance = Math.sqrt(
@@ -759,7 +759,6 @@ export const HeroSection = () => {
               ) : null;
             })
           )}
-
           {animatedNodes.map((node) => (
             <circle
               key={node.id}
@@ -772,7 +771,7 @@ export const HeroSection = () => {
             />
           ))}
         </svg>
-        
+
         <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-60">
           <div className="absolute top-32 left-16 animate-float-gentle">
             <div className="p-2 bg-primary/5 backdrop-blur-sm rounded-lg border border-primary/10">
@@ -796,13 +795,11 @@ export const HeroSection = () => {
           </div>
         </div>
       </div>
-
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 left-10 w-20 h-20 bg-primary/20 rounded-full blur-xl animate-pulse"></div>
         <div className="absolute top-40 right-20 w-32 h-32 bg-accent/30 rounded-full blur-xl animate-pulse delay-1000"></div>
         <div className="absolute bottom-20 left-20 w-24 h-24 bg-primary/20 rounded-full blur-xl animate-pulse delay-2000"></div>
       </div>
-
       <div className="relative z-10 container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="min-h-screen flex flex-col justify-center py-12 sm:py-16 lg:py-20">
           {/* Trust Badges */}
@@ -820,7 +817,6 @@ export const HeroSection = () => {
               <span className="text-xs sm:text-sm font-medium text-foreground">Instant Setup</span>
             </div>
           </div>
-
           {/* Main Headline */}
           <div className="text-center mb-4 sm:mb-6 lg:mb-8 max-w-5xl mx-auto">
             <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold text-foreground leading-tight mb-3 sm:mb-4 lg:mb-6">
@@ -829,17 +825,14 @@ export const HeroSection = () => {
                 Power Your Kenyan Dream.
               </span>
             </h1>
-
             <p className="text-base sm:text-lg md:text-xl lg:text-2xl text-muted-foreground mb-2 sm:mb-3 max-w-4xl mx-auto leading-relaxed px-4">
               The official home of Kenyan businesses.
               <span className="font-semibold text-foreground"> Fast, secure, and uniquely yours.</span>
             </p>
-
             <p className="text-sm sm:text-base lg:text-lg text-muted-foreground max-w-2xl mx-auto px-4">
               Managed by KENIC, the trusted authority with live pricing
             </p>
           </div>
-
           {/* Modern Search Section */}
           <div className="max-w-4xl mx-auto w-full mb-8 sm:mb-12 lg:mb-16 px-4">
             <div className="relative">
@@ -866,7 +859,6 @@ export const HeroSection = () => {
                         </div>
                       )}
                     </div>
-
                     <button
                       onClick={handleManualSearch}
                       disabled={isSearching || !searchQuery.trim()}
@@ -886,13 +878,11 @@ export const HeroSection = () => {
                     </button>
                   </div>
                 </div>
-
                 {error && (
                   <div className="p-4 bg-red-50 border-t border-red-200">
                     <p className="text-sm text-red-600">{error}</p>
                   </div>
                 )}
-
                 {/* Suggestions Panel with Live Pricing and Optimistic UI */}
                 {showSuggestions && (
                   <div className="border-t border-gray-100 bg-gray-50/30 p-4 sm:p-6">
@@ -914,7 +904,6 @@ export const HeroSection = () => {
                         <span>View all .ke extensions</span>
                       </button>
                     </div>
-
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
                       {suggestions.map((suggestion, index) => (
                         suggestion.isLoading ? (
@@ -923,8 +912,8 @@ export const HeroSection = () => {
                           <div
                             key={`${suggestion.domain}-${suggestion.extension.ext}`}
                             className={`group p-3 sm:p-4 bg-white rounded-xl sm:rounded-2xl border transition-all duration-200 ${
-                              suggestion.available 
-                                ? 'border-gray-200 hover:border-primary/30 hover:shadow-md cursor-pointer' 
+                              suggestion.available
+                                ? 'border-gray-200 hover:border-primary/30 hover:shadow-md cursor-pointer'
                                 : 'border-gray-200 opacity-75'
                             }`}
                             onClick={() => suggestion.available && handleDomainSelect(suggestion)}
@@ -958,7 +947,6 @@ export const HeroSection = () => {
                                   )}
                                 </div>
                               </div>
-
                               <div className="flex items-center space-x-2 ml-2">
                                 {suggestion.available === null ? (
                                   <div className="flex items-center space-x-1">
@@ -982,12 +970,11 @@ export const HeroSection = () => {
                         )
                       ))}
                     </div>
-
                     {/* Quick suggestions hint */}
                     {suggestions.some(s => s.available) && (
                       <div className="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
                         <p className="text-sm text-green-800">
-                          💡 <strong>Pro tip:</strong> Popular extensions (.co.ke, .me.ke) are shown first. 
+                          💡 <strong>Pro tip:</strong> Popular extensions (.co.ke, .me.ke) are shown first.
                           Click any available domain to proceed with registration!
                         </p>
                       </div>
@@ -995,10 +982,9 @@ export const HeroSection = () => {
                   </div>
                 )}
               </div>
-
               {/* Secondary Actions */}
               <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row justify-center items-center space-y-2 sm:space-y-0 sm:space-x-6 text-sm sm:text-base">
-                <button 
+                <button
                   onClick={() => setShowAllExtensions(true)}
                   className="text-primary hover:text-primary/80 font-medium transition-colors flex items-center space-x-1"
                 >
@@ -1010,7 +996,6 @@ export const HeroSection = () => {
                 </button>
               </div>
             </div>
-
             {/* Enhanced Stats Section */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8 lg:gap-12 max-w-5xl mx-auto px-4 mt-12">
               <div className="text-center">
@@ -1049,7 +1034,6 @@ export const HeroSection = () => {
           </div>
         </div>
       </div>
-
       {/* Enhanced All .ke Extensions Modal */}
       {showAllExtensions && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1079,7 +1063,6 @@ export const HeroSection = () => {
                 </button>
               </div>
             </div>
-
             {/* Modal Content */}
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
               {loadingExtensions && keExtensions.length === 0 ? (
@@ -1099,16 +1082,15 @@ export const HeroSection = () => {
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {keExtensions.filter(ext => ext.popular).map((extension, index) => (
-                        <ExtensionCard 
-                          key={extension.ext} 
-                          extension={extension} 
+                        <ExtensionCard
+                          key={extension.ext}
+                          extension={extension}
                           onSelect={handleExtensionSelect}
                           isPopular={true}
                         />
                       ))}
                     </div>
                   </div>
-
                   {/* Other Extensions */}
                   <div>
                     <h4 className="text-lg font-semibold text-foreground mb-4">
@@ -1116,9 +1098,9 @@ export const HeroSection = () => {
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {keExtensions.filter(ext => !ext.popular).map((extension, index) => (
-                        <ExtensionCard 
-                          key={extension.ext} 
-                          extension={extension} 
+                        <ExtensionCard
+                          key={extension.ext}
+                          extension={extension}
                           onSelect={handleExtensionSelect}
                           isPopular={false}
                         />
@@ -1127,7 +1109,6 @@ export const HeroSection = () => {
                   </div>
                 </>
               )}
-
               {/* Extension Categories Info */}
               <div className="mt-8 p-4 bg-blue-50 rounded-xl border border-blue-200">
                 <h4 className="font-semibold text-blue-900 mb-2 flex items-center space-x-2">
@@ -1143,7 +1124,6 @@ export const HeroSection = () => {
                 </div>
               </div>
             </div>
-
             {/* Modal Footer */}
             <div className="p-6 border-t border-gray-200 bg-gray-50">
               <div className="flex items-center justify-between">
@@ -1188,8 +1168,8 @@ const ExtensionCard: React.FC<{
 }> = ({ extension, onSelect, isPopular }) => (
   <div
     className={`group p-4 rounded-xl border transition-all duration-200 cursor-pointer ${
-      isPopular 
-        ? 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 hover:border-blue-300 hover:shadow-lg' 
+      isPopular
+        ? 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 hover:border-blue-300 hover:shadow-lg'
         : 'bg-gray-50 hover:bg-white border-gray-200 hover:border-primary/30 hover:shadow-lg'
     }`}
     onClick={() => onSelect(extension)}
@@ -1217,11 +1197,9 @@ const ExtensionCard: React.FC<{
         )}
       </div>
     </div>
-
     <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
       {extension.desc}
     </p>
-
     <div className="space-y-2">
       <div className="flex items-center justify-between text-xs">
         <span className="text-muted-foreground">Category:</span>
@@ -1246,15 +1224,14 @@ const ExtensionCard: React.FC<{
         </div>
       )}
     </div>
-
     <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between">
       <div className="flex items-center space-x-1 text-xs text-muted-foreground">
         <Info className="w-3 h-3" />
         <span>Click to learn more</span>
       </div>
       <ArrowRight className={`w-4 h-4 transition-colors ${
-        isPopular 
-          ? 'text-blue-500 group-hover:text-blue-700' 
+        isPopular
+          ? 'text-blue-500 group-hover:text-blue-700'
           : 'text-muted-foreground group-hover:text-primary'
       }`} />
     </div>
